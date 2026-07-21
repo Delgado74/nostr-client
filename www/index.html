@@ -53,26 +53,6 @@
       </div>
       <div id="feed-events"></div>
     </div>
-
-    <!-- Bottom Nav -->
-    <nav class="bottom-nav">
-      <button class="nav-btn active" data-screen="feed">
-        <span class="nav-icon">📰</span>
-        <span>Feed</span>
-      </button>
-      <button class="nav-btn" data-screen="compose">
-        <span class="nav-icon">✏️</span>
-        <span>Publicar</span>
-      </button>
-      <button class="nav-btn" data-screen="messages">
-        <span class="nav-icon">💬</span>
-        <span>DMs</span>
-      </button>
-      <button class="nav-btn" data-screen="profile">
-        <span class="nav-icon">👤</span>
-        <span>Perfil</span>
-      </button>
-    </nav>
   </div>
 
   <!-- PANTALLA: PUBLICAR -->
@@ -239,6 +219,47 @@
         <input type="text" id="input-new-relay" placeholder="wss://nuevo-relay.com">
         <button id="btn-add-relay" class="btn btn-secondary">Agregar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav (siempre visible) -->
+  <nav id="bottom-nav" class="bottom-nav hidden">
+    <button class="nav-btn active" data-screen="feed">
+      <span class="nav-icon">📰</span>
+      <span>Feed</span>
+    </button>
+    <button class="nav-btn" data-screen="compose">
+      <span class="nav-icon">✏️</span>
+      <span>Publicar</span>
+    </button>
+    <button class="nav-btn" data-screen="messages">
+      <span class="nav-icon">💬</span>
+      <span>DMs</span>
+    </button>
+    <button class="nav-btn" data-screen="profile">
+      <span class="nav-icon">👤</span>
+      <span>Perfil</span>
+    </button>
+  </nav>
+
+  <!-- Menú lateral -->
+  <div id="side-menu-overlay" class="side-menu-overlay hidden"></div>
+  <div id="side-menu" class="side-menu">
+    <div class="side-menu-header">
+      <h3>NostraIsla</h3>
+      <button id="btn-close-menu" class="icon-btn">✕</button>
+    </div>
+    <div class="side-menu-content">
+      <button class="side-menu-item" data-action="settings">
+        <span>⚙️</span> Configuración
+      </button>
+      <button class="side-menu-item" data-action="about">
+        <span>ℹ️</span> Acerca de
+      </button>
+      <hr class="side-menu-divider">
+      <button class="side-menu-item" data-action="logout">
+        <span>🚪</span> Cerrar sesión
+      </button>
     </div>
   </div>
 

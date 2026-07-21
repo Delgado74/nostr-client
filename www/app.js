@@ -85,9 +85,33 @@ function showScreen(screenId) {
     state.currentScreen = screenId;
   }
 
+  // Mostrar/ocultar bottom nav
+  const bottomNav = $('bottom-nav');
+  const screensWithNav = ['main', 'compose', 'messages', 'profile'];
+  if (screensWithNav.includes(screenId) && state.currentAccount) {
+    bottomNav.classList.remove('hidden');
+  } else {
+    bottomNav.classList.add('hidden');
+  }
+
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.screen === screenId);
   });
+}
+
+// ============================================
+// Menú lateral
+// ============================================
+function openSideMenu() {
+  $('side-menu').classList.add('open');
+  $('side-menu-overlay').classList.remove('hidden');
+  setTimeout(() => $('side-menu-overlay').classList.add('visible'), 10);
+}
+
+function closeSideMenu() {
+  $('side-menu').classList.remove('open');
+  $('side-menu-overlay').classList.remove('visible');
+  setTimeout(() => $('side-menu-overlay').classList.add('hidden'), 300);
 }
 
 // ============================================
@@ -563,7 +587,7 @@ function init() {
   if (state.accounts.length > 0) {
     state.currentAccount = state.accounts[0];
     $('screen-login').classList.remove('active');
-    $('screen-main').classList.add('active');
+    showScreen('main');
     connectToRelays();
   }
 
@@ -571,7 +595,7 @@ function init() {
   $('btn-create-account').addEventListener('click', () => {
     createAccount();
     $('screen-login').classList.remove('active');
-    $('screen-main').classList.add('active');
+    showScreen('main');
     connectToRelays();
   });
 
@@ -583,7 +607,7 @@ function init() {
     const nsec = $('input-nsec').value.trim();
     if (importAccount(nsec)) {
       $('screen-login').classList.remove('active');
-      $('screen-main').classList.add('active');
+      showScreen('main');
       connectToRelays();
     }
   });
@@ -679,6 +703,10 @@ function init() {
     state.currentAccount = null;
     state.relayConnections.forEach(r => r.close());
     state.relayConnections = [];
+    $('screen-main').classList.remove('active');
+    $('screen-profile').classList.remove('active');
+    $('screen-compose').classList.remove('active');
+    $('screen-messages').classList.remove('active');
     showScreen('login');
     showToast('Sesión cerrada');
   });
@@ -692,6 +720,28 @@ function init() {
   });
 
   renderRelays();
+
+  // Side menu
+  $('btn-menu').addEventListener('click', openSideMenu);
+  $('btn-close-menu').addEventListener('click', closeSideMenu);
+  $('side-menu-overlay').addEventListener('click', closeSideMenu);
+
+  document.querySelectorAll('.side-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const action = item.dataset.action;
+      closeSideMenu();
+
+      if (action === 'settings') showScreen('settings');
+      if (action === 'logout') {
+        state.currentAccount = null;
+        state.relayConnections.forEach(r => r.close());
+        state.relayConnections = [];
+        showScreen('login');
+        showToast('Sesión cerrada');
+      }
+      if (action === 'about') showToast('NostraIsla v1.0 - Cliente Nostr');
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
