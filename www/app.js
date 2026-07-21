@@ -446,14 +446,15 @@ async function showDmList() {
     ));
 
   const dmList = $('dm-list');
+  dmList.innerHTML = '';
+
+  const newDmBtn = document.createElement('div');
+  newDmBtn.className = 'dm-item';
+  newDmBtn.innerHTML = '<div class="dm-avatar">✏️</div><div class="dm-info"><div class="dm-name">Nuevo mensaje</div></div>';
+  newDmBtn.addEventListener('click', () => $('modal-new-dm').classList.remove('hidden'));
+  dmList.appendChild(newDmBtn);
+
   if (dms.length === 0) {
-    dmList.innerHTML = `
-      <div class="empty-state">
-        <p>No hay conversaciones aún</p>
-        <button id="btn-new-dm" class="btn btn-secondary">Nuevo mensaje</button>
-      </div>
-    `;
-    $('btn-new-dm').addEventListener('click', () => $('modal-new-dm').classList.remove('hidden'));
     return;
   }
 
