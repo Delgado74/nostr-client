@@ -384,7 +384,8 @@ function sendDm(content) {
 function loadProfile() {
   if (!state.currentAccount) return;
 
-  $('profile-npub').textContent = state.currentAccount.npub;
+  $('profile-npub').value = state.currentAccount.npub;
+  $('profile-nsec').value = state.currentAccount.nsec;
 
   // Cargar perfil del caché
   const cached = state.profileCache.get(state.currentAccount.publicKey);
@@ -686,6 +687,29 @@ function init() {
   });
 
   $('btn-save-profile').addEventListener('click', saveProfile);
+
+  // Copy buttons
+  document.querySelectorAll('.btn-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inputId = btn.dataset.copy;
+      const input = $(inputId);
+      navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Copiado al portapapeles', 'success');
+      }).catch(() => {
+        input.select();
+        document.execCommand('copy');
+        showToast('Copiado', 'success');
+      });
+    });
+  });
+
+  // Toggle nsec visibility
+  $('btn-toggle-nsec').addEventListener('click', () => {
+    const nsecInput = $('profile-nsec');
+    const isPassword = nsecInput.type === 'password';
+    nsecInput.type = isPassword ? 'text' : 'password';
+    $('btn-toggle-nsec').textContent = isPassword ? '🔒' : '👁️';
+  });
 
   $('btn-manage-accounts').addEventListener('click', () => {
     $('profile-view').classList.add('hidden');

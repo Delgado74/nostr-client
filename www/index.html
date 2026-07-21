@@ -140,7 +140,23 @@
       <h3 id="profile-name">Sin nombre</h3>
       <p id="profile-about" class="profile-about"></p>
       <p id="profile-nip05" class="profile-nip05 hidden"></p>
-      <p id="profile-npub" class="profile-npub"></p>
+
+      <div class="key-box">
+        <label>npub (pública)</label>
+        <div class="key-row">
+          <input type="text" id="profile-npub" readonly>
+          <button class="btn-copy" data-copy="profile-npub">📋</button>
+        </div>
+      </div>
+
+      <div class="key-box">
+        <label>nsec (privada - NO compartir)</label>
+        <div class="key-row">
+          <input type="password" id="profile-nsec" readonly>
+          <button class="btn-toggle-visibility" id="btn-toggle-nsec">👁️</button>
+          <button class="btn-copy" data-copy="profile-nsec">📋</button>
+        </div>
+      </div>
 
       <button id="btn-edit-profile" class="btn btn-secondary">
         Editar perfil
