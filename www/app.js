@@ -2,10 +2,10 @@
 // NostraIsla - App Principal
 // ============================================
 
-import { generatePrivateKey, getPublicKey, getNpub, getNsec } from '../src/utils/crypto.js';
-import { createNote, createReply, createProfile, createReaction, createRepost } from '../src/utils/event.js';
-import Relay from '../src/relay/connection.js';
-import { ProfileCache, EventCache } from '../src/utils/cache.js';
+import { generatePrivateKey, getPublicKey, getNpub, getNsec } from './src/utils/crypto.js';
+import { createNote, createReply, createProfile, createReaction, createRepost } from './src/utils/event.js';
+import Relay from './src/relay/connection.js';
+import { ProfileCache, EventCache } from './src/utils/cache.js';
 
 // ============================================
 // Estado de la aplicación

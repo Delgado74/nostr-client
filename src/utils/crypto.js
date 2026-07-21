@@ -1,24 +1,43 @@
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { hmac } from '@noble/hashes/hmac.js';
-import * as secp256k1 from '@noble/secp256k1';
+const { bytesToHex, hexToBytes } = require('@noble/hashes/utils');
+const { sha256 } = require('@noble/hashes/sha256');
+const secp256k1 = require('@noble/secp256k1');
 
-const h256 = (k, m) => hmac(sha256, k, m);
-secp256k1.hashes.sha256 = sha256;
-secp256k1.hashes.hmacSha256 = h256;
-
-export function generatePrivateKey() {
-  return bytesToHex(secp256k1.utils.randomSecretKey());
+function generatePrivateKey() {
+  return bytesToHex(secp256k1.utils.randomPrivateKey());
 }
 
-export function getPublicKey(privateKey) {
-  return bytesToHex(secp256k1.schnorr.getPublicKey(hexToBytes(privateKey)));
+function getPublicKey(privateKey) {
+  return bytesToHex(secp256k1.getPublicKey(privateKey, true));
 }
 
-export function getNpub(publicKey) {
-  return `npub${publicKey}`;
+function encodeBech32(prefix, data) {
+  return `${prefix}${data}`;
 }
 
-export function getNsec(privateKey) {
-  return `nsec${privateKey}`;
+function getNpub(publicKey) {
+  return encodeBech32('npub', publicKey);
 }
+
+function getNsec(privateKey) {
+  return encodeBech32('nsec', privateKey);
+}
+
+function signEvent(event, privateKey) {
+  const eventHash = sha256(new TextEncoder().encode(JSON.stringify(event)));
+  const signature = secp256k1.sign(eventHash, privateKey);
+  return bytesToHex(signature.toCompactRawBytes());
+}
+
+function verifySignature(event, publicKey) {
+  const eventHash = sha256(new TextEncoder().encode(JSON.stringify(event)));
+  return secp256k1.verify(event.signature, eventHash, publicKey);
+}
+
+module.exports = {
+  generatePrivateKey,
+  getPublicKey,
+  getNpub,
+  getNsec,
+  signEvent,
+  verifySignature
+};
