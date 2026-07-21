@@ -1,4 +1,4 @@
-import { bech32 } from 'https://esm.sh/bech32@1.1.4';
+import * as bech32 from 'https://esm.sh/bech32@1.1.4';
 
 export function hexToBytes(hex) {
   const bytes = new Uint8Array(hex.length / 2);

@@ -3,9 +3,11 @@
 // ============================================
 
 import { generatePrivateKey, getPublicKey, getNpub, getNsec } from './src/utils/crypto.js';
-import { createNote, createReply, createProfile, createReaction, createRepost } from './src/utils/event.js';
+import { createNote, createReply, createProfile, createReaction, createRepost, createEvent } from './src/utils/event.js';
 import Relay from './src/relay/connection.js';
 import { ProfileCache, EventCache } from './src/utils/cache.js';
+import { decodeBech32 } from './src/utils/bech32.js';
+import { encrypt, decrypt } from './src/utils/nip04.js';
 
 // ============================================
 // Estado de la aplicación
@@ -19,13 +21,22 @@ const state = {
   eventCache: new EventCache(),
   currentScreen: 'login',
   dmRecipient: null,
-  viewingEvent: null
+  renderedDmIds: new Set(),
+  viewingEvent: null,
+  viewingUserProfile: null
 };
 
 // ============================================
 // Persistencia (localStorage)
 // ============================================
 function saveAccounts() {
+  state.accounts = state.accounts.map(acc => {
+    if (acc.privateKey && acc.publicKey) {
+      acc.npub = getNpub(acc.publicKey);
+      acc.nsec = getNsec(acc.privateKey);
+    }
+    return acc;
+  });
   localStorage.setItem('nostra_isla_accounts', JSON.stringify(state.accounts));
   localStorage.setItem('nostra_isla_relays', JSON.stringify(state.relays));
 }
@@ -34,7 +45,15 @@ function loadAccounts() {
   try {
     const accounts = localStorage.getItem('nostra_isla_accounts');
     const relays = localStorage.getItem('nostra_isla_relays');
-    if (accounts) state.accounts = JSON.parse(accounts);
+    if (accounts) {
+      state.accounts = JSON.parse(accounts).map(acc => {
+        if (acc.privateKey && acc.publicKey) {
+          acc.npub = getNpub(acc.publicKey);
+          acc.nsec = getNsec(acc.privateKey);
+        }
+        return acc;
+      });
+    }
     if (relays) state.relays = JSON.parse(relays);
   } catch (e) {
     console.error('Error loading accounts:', e);
@@ -78,16 +97,23 @@ function shortId(id) {
 // Navegación entre pantallas
 // ============================================
 function showScreen(screenId) {
+  const screenMap = { feed: 'main' };
+  const mappedId = screenMap[screenId] || screenId;
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  const screen = $(`screen-${screenId}`);
+  const screen = $(`screen-${mappedId}`);
   if (screen) {
     screen.classList.add('active');
     state.currentScreen = screenId;
   }
 
+  if (screenId === 'settings') {
+    renderRelays();
+  }
+
   // Mostrar/ocultar bottom nav
   const bottomNav = $('bottom-nav');
-  const screensWithNav = ['main', 'compose', 'messages', 'profile'];
+  const screensWithNav = ['feed', 'compose', 'messages', 'profile'];
   if (screensWithNav.includes(screenId) && state.currentAccount) {
     bottomNav.classList.remove('hidden');
   } else {
@@ -120,23 +146,56 @@ function closeSideMenu() {
 async function connectToRelays() {
   $('connection-status').className = 'status-dot disconnected';
 
-  for (const url of state.relays) {
+  const promises = state.relays.map(async (url) => {
     try {
       const relay = new Relay(url);
+      relay.onOk = (eventId, status, msg, relayUrl) => {
+        const short = eventId.slice(0, 8);
+        if (status) {
+          showToast(`✓ Nota aceptada en ${new URL(relayUrl).hostname}`, 'success');
+        } else {
+          showToast(`✗ Rechazada en ${new URL(relayUrl).hostname}: ${msg}`, 'error');
+        }
+      };
+      relay.onNotice = (notice, relayUrl) => {
+        showToast(`Aviso: ${notice}`, 'error');
+      };
       await relay.connect();
-      state.relayConnections.push(relay);
+      return relay;
     } catch (e) {
       console.log(`No se pudo conectar a ${url}`);
+      return null;
     }
-  }
+  });
+
+  const results = await Promise.all(promises);
+  state.relayConnections = results.filter(r => r !== null);
 
   if (state.relayConnections.length > 0) {
     $('connection-status').className = 'status-dot connected';
-    showToast(`Conectado a ${state.relayConnections.length} relay(s)`, 'success');
+    const names = state.relayConnections.map(r => new URL(r.url).hostname).join(', ');
+    showToast(`Conectado: ${names}`, 'success');
     subscribeToFeed();
+    publishInitialProfile();
   } else {
     showToast('No se pudo conectar a ningún relay', 'error');
   }
+}
+
+function publishInitialProfile() {
+  if (!state.currentAccount) return;
+
+  const cached = state.profileCache.get(state.currentAccount.publicKey);
+  if (cached && cached.name) return;
+
+  const profileData = {
+    name: 'NostraIsla User',
+    about: ''
+  };
+
+  const event = createProfile(state.currentAccount.privateKey, profileData);
+  publish(event);
+  state.profileCache.set(state.currentAccount.publicKey, profileData);
 }
 
 function publish(event) {
@@ -148,12 +207,14 @@ function publish(event) {
 // ============================================
 function subscribeToFeed() {
   const subId = 'main-feed';
+  const pubHex = state.currentAccount?.publicKey;
   const filters = [
     { kinds: [1], limit: 20 },
     { kinds: [0], limit: 30 },
     { kinds: [7], limit: 50 },
     { kinds: [6], limit: 20 },
-    { kinds: [4], limit: 20 }
+    { kinds: [4], authors: [pubHex], limit: 50 },
+    { kinds: [4], '#p': [pubHex], limit: 50 }
   ];
 
   state.relayConnections.forEach(r => {
@@ -168,6 +229,10 @@ function subscribeToFeed() {
 
       if (event.kind === 1) {
         addEventToFeed(event);
+      }
+
+      if (event.kind === 4) {
+        onIncomingDm(event);
       }
     });
   });
@@ -276,11 +341,16 @@ function showEventDetail(event) {
 function publishNote(content) {
   if (!content.trim() || !state.currentAccount) return;
 
+  if (state.relayConnections.length === 0) {
+    showToast('No hay relays conectados. Espera...', 'error');
+    return;
+  }
+
   const event = createNote(state.currentAccount.privateKey, content);
   publish(event);
   state.eventCache.add(event);
   addEventToFeed(event);
-  showToast('Nota publicada', 'success');
+  showToast('Nota enviada a ' + state.relayConnections.length + ' relay(s)...', 'success');
 }
 
 // ============================================
@@ -309,7 +379,7 @@ function sendReply(content) {
   publish(event);
   state.eventCache.add(event);
   showToast('Respuesta publicada', 'success');
-  showScreen('main');
+  showScreen('feed');
 }
 
 // ============================================
@@ -337,17 +407,43 @@ async function repostEvent(targetEvent) {
 }
 
 // ============================================
-// DMs (NIP-04 básico)
+// DMs (NIP-04 cifrado)
 // ============================================
-function showDmList() {
+function getDmParties(event) {
+  const sender = event.pubkey;
+  const receiver = event.tags.find(t => t[0] === 'p')?.[1];
+  return { sender, receiver };
+}
+
+function isSentByMe(event) {
+  return event.pubkey === state.currentAccount?.publicKey;
+}
+
+async function decryptDmContent(event) {
+  const { sender, receiver } = getDmParties(event);
+  const isMine = isSentByMe(event);
+  try {
+    if (isMine) {
+      return await decrypt(event.content, state.currentAccount.privateKey, receiver);
+    } else {
+      return await decrypt(event.content, state.currentAccount.privateKey, sender);
+    }
+  } catch {
+    return '[No se pudo descifrar]';
+  }
+}
+
+async function showDmList() {
   $('dm-chat').classList.add('hidden');
   $('dm-list').classList.remove('hidden');
   $('messages-title').textContent = 'Mensajes directos';
   $('btn-back-messages').classList.add('hidden');
 
   const dms = [...state.eventCache.events.values()]
-    .filter(e => e.kind === 4 && e.pubkey === state.currentAccount?.publicKey ||
-                 e.kind === 4 && e.tags.some(t => t[1] === state.currentAccount?.publicKey));
+    .filter(e => e.kind === 4 && (
+      e.pubkey === state.currentAccount?.publicKey ||
+      e.tags.some(t => t[1] === state.currentAccount?.publicKey)
+    ));
 
   const dmList = $('dm-list');
   if (dms.length === 0) {
@@ -358,40 +454,133 @@ function showDmList() {
       </div>
     `;
     $('btn-new-dm').addEventListener('click', () => $('modal-new-dm').classList.remove('hidden'));
+    return;
+  }
+
+  // Agrupar por conversación (la otra persona)
+  const conversations = new Map();
+  for (const dm of dms) {
+    const { sender, receiver } = getDmParties(dm);
+    const otherPubkey = isSentByMe(dm) ? receiver : sender;
+    if (!conversations.has(otherPubkey) || dm.created_at > conversations.get(otherPubkey).created_at) {
+      conversations.set(otherPubkey, dm);
+    }
+  }
+
+  dmList.innerHTML = '';
+  for (const [otherPubkey, lastDm] of conversations) {
+    const decrypted = await decryptDmContent(lastDm);
+    const profile = state.profileCache.get(otherPubkey);
+    const name = profile?.name || otherPubkey.slice(0, 12);
+
+    const item = document.createElement('div');
+    item.className = 'dm-item';
+    item.innerHTML = `
+      <div class="dm-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:48px;height:48px;border-radius:50%">` : '👤'}</div>
+      <div class="dm-info">
+        <div class="dm-name">${escapeHtml(name)}</div>
+        <div class="dm-last-message">${escapeHtml(decrypted).slice(0, 60)}${decrypted.length > 60 ? '...' : ''}</div>
+      </div>
+    `;
+    item.addEventListener('click', () => openDm(otherPubkey));
+    dmList.appendChild(item);
   }
 }
 
-function openDm(recipientPubkey) {
-  state.dmRecipient = recipientPubkey;
-  $('dm-chat').classList.remove('hidden');
-  $('dm-list').classList.add('hidden');
-  $('messages-title').textContent = recipientPubkey.slice(0, 16) + '...';
-  $('btn-back-messages').classList.remove('hidden');
-  $('dm-messages').innerHTML = '';
+function normalizePubkey(input) {
+  if (input.startsWith('npub') || input.startsWith('nsec')) {
+    try { return decodeBech32(input); } catch { return input; }
+  }
+  return input;
 }
 
-function sendDm(content) {
+async function openDm(recipientPubkey) {
+  state.dmRecipient = normalizePubkey(recipientPubkey);
+  state.renderedDmIds = new Set();
+  $('dm-chat').classList.remove('hidden');
+  $('dm-list').classList.add('hidden');
+  const profile = state.profileCache.get(state.dmRecipient);
+  $('messages-title').textContent = profile?.name || state.dmRecipient.slice(0, 16) + '...';
+  $('btn-back-messages').classList.remove('hidden');
+  $('dm-messages').innerHTML = '';
+
+  // Cargar historial de esta conversación
+  const dms = [...state.eventCache.events.values()]
+    .filter(e => e.kind === 4 && (
+      (e.pubkey === state.dmRecipient && e.tags.some(t => t[1] === state.currentAccount?.publicKey)) ||
+      (e.pubkey === state.currentAccount?.publicKey && e.tags.some(t => t[1] === state.dmRecipient))
+    ))
+    .sort((a, b) => a.created_at - b.created_at);
+
+  for (const dm of dms) {
+    state.renderedDmIds.add(dm.id);
+    const decrypted = await decryptDmContent(dm);
+    const isMine = isSentByMe(dm);
+    const bubble = document.createElement('div');
+    bubble.className = `dm-bubble ${isMine ? 'sent' : 'received'}`;
+    bubble.innerHTML = `
+      ${escapeHtml(decrypted)}
+      <div class="dm-bubble-time">${formatTime(dm.created_at)}</div>
+    `;
+    $('dm-messages').appendChild(bubble);
+  }
+
+  // Scroll al final
+  $('dm-messages').scrollTop = $('dm-messages').scrollHeight;
+}
+
+async function sendDm(content) {
   if (!content.trim() || !state.dmRecipient || !state.currentAccount) return;
 
-  // NIP-04 básico: cifrar mensaje
-  const dmEvent = {
-    kind: 4,
-    created_at: Math.floor(Date.now() / 1000),
-    content: content, // En producción: cifrar con NIP-04
-    tags: [['p', state.dmRecipient]],
-    pubkey: state.currentAccount.publicKey
-  };
+  try {
+    const encrypted = await encrypt(content, state.currentAccount.privateKey, state.dmRecipient);
 
-  publish(dmEvent);
+    const dmEvent = createEvent(state.currentAccount.privateKey, 4, encrypted, [['p', state.dmRecipient]]);
 
+    publish(dmEvent);
+    state.renderedDmIds.add(dmEvent.id);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'dm-bubble sent';
+    bubble.innerHTML = `
+      ${escapeHtml(content)}
+      <div class="dm-bubble-time">${formatTime(dmEvent.created_at)}</div>
+    `;
+    $('dm-messages').appendChild(bubble);
+    $('dm-input').value = '';
+  } catch (err) {
+    console.error('Error al cifrar DM:', err);
+    showToast('Error al enviar mensaje cifrado', 'error');
+  }
+}
+
+async function onIncomingDm(event) {
+  if (!state.currentAccount) return;
+  const { sender, receiver } = getDmParties(event);
+  const isMine = isSentByMe(event);
+  const otherPubkey = isMine ? receiver : sender;
+
+  if (!state.dmRecipient || normalizePubkey(otherPubkey) !== state.dmRecipient) {
+    if (!isMine) {
+      const profile = state.profileCache.get(sender);
+      const name = profile?.name || sender.slice(0, 8);
+      showToast(`DM de ${name}`, 'info');
+    }
+    return;
+  }
+
+  if (state.renderedDmIds.has(event.id)) return;
+  state.renderedDmIds.add(event.id);
+
+  const decrypted = await decryptDmContent(event);
   const bubble = document.createElement('div');
-  bubble.className = 'dm-bubble sent';
+  bubble.className = `dm-bubble ${isMine ? 'sent' : 'received'}`;
   bubble.innerHTML = `
-    ${escapeHtml(content)}
-    <div class="dm-bubble-time">${formatTime(dmEvent.created_at)}</div>
+    ${escapeHtml(decrypted)}
+    <div class="dm-bubble-time">${formatTime(event.created_at)}</div>
   `;
   $('dm-messages').appendChild(bubble);
-  $('dm-input').value = '';
+  $('dm-messages').scrollTop = $('dm-messages').scrollHeight;
 }
 
 // ============================================
@@ -448,41 +637,44 @@ function saveProfile() {
 // Cuentas
 // ============================================
 function createAccount() {
-  const privateKey = generatePrivateKey();
-  const publicKey = getPublicKey(privateKey);
-  const npub = getNpub(publicKey);
-  const nsec = getNsec(privateKey);
+  try {
+    const privateKey = generatePrivateKey();
+    const publicKey = getPublicKey(privateKey);
+    const npub = getNpub(publicKey);
+    const nsec = getNsec(privateKey);
 
-  const account = {
-    privateKey,
-    publicKey,
-    npub,
-    nsec,
-    name: 'Nueva cuenta',
-    created_at: Date.now()
-  };
+    const account = {
+      privateKey,
+      publicKey,
+      npub,
+      nsec,
+      name: 'Nueva cuenta',
+      created_at: Date.now()
+    };
 
-  state.accounts.push(account);
-  state.currentAccount = account;
-  saveAccounts();
+    state.accounts.push(account);
+    state.currentAccount = account;
+    saveAccounts();
 
-  showToast('Cuenta creada', 'success');
-  return account;
+    showToast('Cuenta creada', 'success');
+    return account;
+  } catch (e) {
+    console.error('Error creando cuenta:', e);
+    showToast('Error al crear cuenta: ' + e.message, 'error');
+    return null;
+  }
 }
 
 function importAccount(nsecInput) {
   try {
-    // Validar que empiece con nsec
     if (!nsecInput.startsWith('nsec')) {
       throw new Error('nsec debe comenzar con "nsec"');
     }
 
-    // Por ahora, extraer la clave hex del nsec
-    // En producción usar nip19 de nostr-tools
-    const hexKey = nsecInput.replace('nsec', '');
+    const hexKey = decodeBech32(nsecInput);
 
     if (hexKey.length !== 64) {
-      throw new Error('nsec inválido');
+      throw new Error('nsec inválido: longitud incorrecta');
     }
 
     const publicKey = getPublicKey(hexKey);
@@ -504,6 +696,7 @@ function importAccount(nsecInput) {
     showToast('Cuenta importada', 'success');
     return account;
   } catch (e) {
+    console.error('Error importando cuenta:', e);
     showToast(e.message, 'error');
     return null;
   }
@@ -563,13 +756,25 @@ function renderAccounts() {
 // Relays
 // ============================================
 function renderRelays() {
+  const connectedUrls = state.relayConnections.map(r => r.url);
+
+  const statusEl = $('relays-status');
+  if (statusEl) {
+    statusEl.textContent = `${connectedUrls.length} de ${state.relays.length} relays conectados`;
+    statusEl.className = connectedUrls.length > 0 ? 'relays-status ok' : 'relays-status error';
+  }
+
   const list = $('relays-list');
-  list.innerHTML = state.relays.map((url, i) => `
+  list.innerHTML = state.relays.map((url, i) => {
+    const connected = connectedUrls.includes(url);
+    const host = new URL(url).hostname;
+    return `
     <div class="relay-item">
-      <span>${url}</span>
+      <span class="relay-status-dot ${connected ? 'connected' : 'disconnected'}"></span>
+      <span class="relay-url">${host}</span>
       <button class="relay-remove" data-index="${i}">×</button>
     </div>
-  `).join('');
+  `}).join('');
 
   list.querySelectorAll('.relay-remove').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -596,24 +801,91 @@ function addRelay(url) {
 }
 
 // ============================================
+// Buscar usuario por npub
+// ============================================
+function searchUserProfile(hexPubkey) {
+  state.viewingUserProfile = hexPubkey;
+  showScreen('user-profile');
+  $('user-profile-name').textContent = 'Buscando...';
+  $('user-profile-about').textContent = '';
+  $('user-profile-avatar').innerHTML = '👤';
+  $('user-profile-nip05').classList.add('hidden');
+  $('user-profile-npub').textContent = 'npub1' + hexPubkey.slice(0, 20) + '...';
+  $('user-profile-feed').innerHTML = '';
+
+  const subId = 'user-search-' + hexPubkey.slice(0, 8);
+  const filters = [
+    { authors: [hexPubkey], kinds: [0], limit: 1 },
+    { authors: [hexPubkey], kinds: [1], limit: 20 }
+  ];
+
+  state.relayConnections.forEach(r => {
+    r.subscribe(subId, filters, (event) => {
+      state.eventCache.add(event);
+
+      if (event.kind === 0) {
+        const profile = parseProfile(event.content);
+        state.profileCache.set(event.pubkey, profile);
+        $('user-profile-name').textContent = profile.name || 'Sin nombre';
+        if (profile.about) $('user-profile-about').textContent = profile.about;
+        if (profile.picture) {
+          $('user-profile-avatar').innerHTML = `<img src="${profile.picture}" style="width:80px;height:80px;border-radius:50%">`;
+        }
+        if (profile.nip05) {
+          $('user-profile-nip05').textContent = `✓ ${profile.nip05}`;
+          $('user-profile-nip05').classList.remove('hidden');
+        }
+      }
+
+      if (event.kind === 1) {
+        const feed = $('user-profile-feed');
+        const profile = state.profileCache.get(hexPubkey);
+        const name = profile?.name || hexPubkey.slice(0, 8);
+
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        card.innerHTML = `
+          <div class="event-header">
+            <div class="event-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:40px;height:40px;border-radius:50%">` : '👤'}</div>
+            <div>
+              <span class="event-author">${escapeHtml(name)}</span>
+            </div>
+            <span class="event-time">${formatTime(event.created_at)}</span>
+          </div>
+          <div class="event-content">${escapeHtml(event.content)}</div>
+        `;
+        feed.prepend(card);
+      }
+    });
+  });
+
+  setTimeout(() => {
+    state.relayConnections.forEach(r => r.unsubscribe(subId));
+  }, 5000);
+}
+
+// ============================================
 // Inicialización
 // ============================================
 function init() {
+  console.log('NostraIsla: Módulos cargados correctamente');
   loadAccounts();
 
   if (state.accounts.length > 0) {
     state.currentAccount = state.accounts[0];
     $('screen-login').classList.remove('active');
-    showScreen('main');
+    showScreen('feed');
     connectToRelays();
   }
 
   // Login
   $('btn-create-account').addEventListener('click', () => {
-    createAccount();
-    $('screen-login').classList.remove('active');
-    showScreen('main');
-    connectToRelays();
+    const account = createAccount();
+    if (account) {
+      $('screen-login').classList.remove('active');
+      showScreen('feed');
+      connectToRelays();
+    }
   });
 
   $('btn-import-account').addEventListener('click', () => {
@@ -624,24 +896,24 @@ function init() {
     const nsec = $('input-nsec').value.trim();
     if (importAccount(nsec)) {
       $('screen-login').classList.remove('active');
-      showScreen('main');
+      showScreen('feed');
       connectToRelays();
     }
   });
 
   // Bottom nav
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const screen = btn.dataset.screen;
       showScreen(screen);
 
       if (screen === 'profile') loadProfile();
-      if (screen === 'messages') showDmList();
+      if (screen === 'messages') await showDmList();
     });
   });
 
   // Compose
-  $('btn-back-compose').addEventListener('click', () => showScreen('main'));
+  $('btn-back-compose').addEventListener('click', () => showScreen('feed'));
 
   $('compose-text').addEventListener('input', (e) => {
     $('compose-count').textContent = `${e.target.value.length}/10000`;
@@ -650,11 +922,11 @@ function init() {
   $('btn-publish').addEventListener('click', () => {
     publishNote($('compose-text').value);
     $('compose-text').value = '';
-    showScreen('main');
+    showScreen('feed');
   });
 
   // Reply
-  $('btn-back-reply').addEventListener('click', () => showScreen('main'));
+  $('btn-back-reply').addEventListener('click', () => showScreen('feed'));
 
   $('reply-text').addEventListener('input', (e) => {
     $('reply-count').textContent = `${e.target.value.length}/10000`;
@@ -665,7 +937,7 @@ function init() {
   });
 
   // DMs
-  $('btn-back-messages').addEventListener('click', () => showDmList());
+  $('btn-back-messages').addEventListener('click', async () => showDmList());
 
   $('btn-new-dm')?.addEventListener('click', () => {
     $('modal-new-dm').classList.remove('hidden');
@@ -675,26 +947,24 @@ function init() {
     $('modal-new-dm').classList.add('hidden');
   });
 
-  $('btn-send-dm').addEventListener('click', () => {
+  $('btn-send-dm').addEventListener('click', async () => {
     const recipient = $('dm-recipient').value.trim();
     const message = $('dm-message').value.trim();
     if (recipient && message) {
       $('modal-new-dm').classList.add('hidden');
-      openDm(recipient);
-      sendDm(message);
+      await openDm(recipient);
+      await sendDm(message);
     }
   });
 
-  $('btn-dm-send').addEventListener('click', () => {
-    sendDm($('dm-input').value);
-  });
+  $('btn-dm-send').addEventListener('click', () => sendDm($('dm-input').value));
 
   $('dm-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendDm($('dm-input').value);
   });
 
   // Profile
-  $('btn-back-profile')?.addEventListener('click', () => showScreen('main'));
+  $('btn-back-profile')?.addEventListener('click', () => showScreen('feed'));
 
   $('btn-edit-profile').addEventListener('click', () => {
     $('profile-view').classList.add('hidden');
@@ -748,16 +1018,12 @@ function init() {
     state.currentAccount = null;
     state.relayConnections.forEach(r => r.close());
     state.relayConnections = [];
-    $('screen-main').classList.remove('active');
-    $('screen-profile').classList.remove('active');
-    $('screen-compose').classList.remove('active');
-    $('screen-messages').classList.remove('active');
     showScreen('login');
     showToast('Sesión cerrada');
   });
 
   // Settings
-  $('btn-back-settings')?.addEventListener('click', () => showScreen('main'));
+  $('btn-back-settings')?.addEventListener('click', () => showScreen('feed'));
 
   $('btn-add-relay').addEventListener('click', () => {
     addRelay($('input-new-relay').value);
@@ -787,6 +1053,50 @@ function init() {
       if (action === 'about') showToast('NostraIsla v1.0 - Cliente Nostr');
     });
   });
+
+  // Search by npub
+  $('btn-search-user').addEventListener('click', () => {
+    const input = $('search-npub').value.trim();
+    if (!input) return;
+
+    let hexPubkey;
+    try {
+      hexPubkey = decodeBech32(input);
+    } catch (e) {
+      showToast('npub inválido', 'error');
+      return;
+    }
+
+    closeSideMenu();
+    searchUserProfile(hexPubkey);
+  });
+
+  $('search-npub').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') $('btn-search-user').click();
+  });
+
+  // User profile back button
+  $('btn-back-user-profile')?.addEventListener('click', () => showScreen('feed'));
+
+  // Send DM from user profile
+  $('btn-send-dm-to-user')?.addEventListener('click', async () => {
+    if (!state.viewingUserProfile) return;
+    showScreen('messages');
+    await openDm(state.viewingUserProfile);
+  });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    init();
+  } catch (e) {
+    console.error('NostraIsla: Error al inicializar:', e);
+    document.body.innerHTML = `
+      <div style="padding:20px;color:#fff;background:#1a1a2e;height:100vh;font-family:monospace">
+        <h2>Error al cargar NostraIsla</h2>
+        <p>${e.message}</p>
+        <p style="color:#888">Revisa la consola del navegador (F12) para más detalles.</p>
+      </div>
+    `;
+  }
+});

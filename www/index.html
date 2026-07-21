@@ -130,7 +130,7 @@
   <!-- PANTALLA: PERFIL -->
   <div id="screen-profile" class="screen">
     <header class="header">
-      <button id="btn-back-profile" class="icon-btn hidden">←</button>
+      <button id="btn-back-profile" class="icon-btn">←</button>
       <h2>Mi perfil</h2>
       <div></div>
     </header>
@@ -208,7 +208,7 @@
       <div></div>
     </header>
 
-    <div class="profile-container">
+    <div class="profile-container" style="padding-bottom:16px">
       <div class="profile-avatar" id="user-profile-avatar">👤</div>
       <h3 id="user-profile-name">Cargando...</h3>
       <p id="user-profile-about" class="profile-about"></p>
@@ -218,6 +218,8 @@
         Enviar mensaje
       </button>
     </div>
+
+    <div id="user-profile-feed" class="feed"></div>
   </div>
 
   <!-- PANTALLA: CONFIGURACIÓN -->
@@ -230,6 +232,7 @@
 
     <div class="settings-container">
       <h3>Relays</h3>
+      <div id="relays-status" class="relays-status"></div>
       <div id="relays-list"></div>
       <div class="form-group">
         <input type="text" id="input-new-relay" placeholder="wss://nuevo-relay.com">
@@ -266,6 +269,11 @@
       <button id="btn-close-menu" class="icon-btn">✕</button>
     </div>
     <div class="side-menu-content">
+      <div class="side-menu-search">
+        <input type="text" id="search-npub" placeholder="Buscar usuario por npub...">
+        <button id="btn-search-user" class="btn btn-primary btn-search">Buscar</button>
+      </div>
+      <hr class="side-menu-divider">
       <button class="side-menu-item" data-action="settings">
         <span>⚙️</span> Configuración
       </button>

@@ -25,3 +25,7 @@ export function getNsec(privateKey) {
 }
 
 export { nobleBytesToHex as bytesToHex, nobleHexToBytes as hexToBytes };
+
+export function getSharedSecret(privateKey, publicKey) {
+  return secp256k1.getSharedSecret(privateKey, publicKey);
+}
