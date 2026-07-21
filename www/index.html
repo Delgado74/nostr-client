@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>NostraIsla</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- PANTALLA: LOGIN -->
+  <div id="screen-login" class="screen active">
+    <div class="login-container">
+      <h1>NostraIsla</h1>
+      <p class="subtitle">Red descentralizada de comunicación</p>
+
+      <button id="btn-create-account" class="btn btn-primary">
+        Crear cuenta nueva
+      </button>
+
+      <button id="btn-import-account" class="btn btn-secondary">
+        Importar nsec existente
+      </button>
+
+      <div id="import-form" class="hidden">
+        <input type="text" id="input-nsec" placeholder="nsec1..." autocomplete="off">
+        <button id="btn-import-confirm" class="btn btn-primary">
+          Conectar
+        </button>
+        <p id="import-error" class="error hidden"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA: PRINCIPAL -->
+  <div id="screen-main" class="screen">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <button id="btn-menu" class="icon-btn">☰</button>
+      </div>
+      <h2>NostraIsla</h2>
+      <div class="header-right">
+        <span id="connection-status" class="status-dot disconnected"></span>
+      </div>
+    </header>
+
+    <!-- Feed -->
+    <div id="feed" class="feed">
+      <div id="feed-loading" class="loading hidden">
+        <div class="spinner"></div>
+      </div>
+      <div id="feed-events"></div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-screen="feed">
+        <span class="nav-icon">📰</span>
+        <span>Feed</span>
+      </button>
+      <button class="nav-btn" data-screen="compose">
+        <span class="nav-icon">✏️</span>
+        <span>Publicar</span>
+      </button>
+      <button class="nav-btn" data-screen="messages">
+        <span class="nav-icon">💬</span>
+        <span>DMs</span>
+      </button>
+      <button class="nav-btn" data-screen="profile">
+        <span class="nav-icon">👤</span>
+        <span>Perfil</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- PANTALLA: PUBLICAR -->
+  <div id="screen-compose" class="screen">
+    <header class="header">
+      <button id="btn-back-compose" class="icon-btn">←</button>
+      <h2>Nueva nota</h2>
+      <div></div>
+    </header>
+
+    <div class="compose-container">
+      <textarea id="compose-text" placeholder="¿Qué estás pensando?" maxlength="10000"></textarea>
+      <div class="compose-footer">
+        <span id="compose-count">0/10000</span>
+        <button id="btn-publish" class="btn btn-primary">Publicar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA: RESPONDER -->
+  <div id="screen-reply" class="screen">
+    <header class="header">
+      <button id="btn-back-reply" class="icon-btn">←</button>
+      <h2>Responder</h2>
+      <div></div>
+    </header>
+
+    <div class="compose-container">
+      <div id="reply-to" class="reply-preview"></div>
+      <textarea id="reply-text" placeholder="Tu respuesta..." maxlength="10000"></textarea>
+      <div class="compose-footer">
+        <span id="reply-count">0/10000</span>
+        <button id="btn-reply-send" class="btn btn-primary">Responder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA: MENSAJES -->
+  <div id="screen-messages" class="screen">
+    <header class="header">
+      <button id="btn-back-messages" class="icon-btn hidden">←</button>
+      <h2 id="messages-title">Mensajes directos</h2>
+      <div></div>
+    </header>
+
+    <div id="dm-list" class="dm-list">
+      <div class="empty-state">
+        <p>No hay conversaciones aún</p>
+        <button id="btn-new-dm" class="btn btn-secondary">Nuevo mensaje</button>
+      </div>
+    </div>
+
+    <div id="dm-chat" class="dm-chat hidden">
+      <div id="dm-messages" class="dm-messages"></div>
+      <div class="dm-input-container">
+        <input type="text" id="dm-input" placeholder="Escribe un mensaje...">
+        <button id="btn-dm-send" class="btn btn-primary">Enviar</button>
+      </div>
+    </div>
+
+    <!-- Modal nuevo DM -->
+    <div id="modal-new-dm" class="modal hidden">
+      <div class="modal-content">
+        <h3>Nuevo mensaje directo</h3>
+        <input type="text" id="dm-recipient" placeholder="npub del destinatario">
+        <textarea id="dm-message" placeholder="Mensaje..."></textarea>
+        <div class="modal-buttons">
+          <button id="btn-cancel-dm" class="btn btn-secondary">Cancelar</button>
+          <button id="btn-send-dm" class="btn btn-primary">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANTALLA: PERFIL -->
+  <div id="screen-profile" class="screen">
+    <header class="header">
+      <button id="btn-back-profile" class="icon-btn hidden">←</button>
+      <h2>Mi perfil</h2>
+      <div></div>
+    </header>
+
+    <div id="profile-view" class="profile-container">
+      <div class="profile-avatar" id="profile-avatar">👤</div>
+      <h3 id="profile-name">Sin nombre</h3>
+      <p id="profile-about" class="profile-about"></p>
+      <p id="profile-nip05" class="profile-nip05 hidden"></p>
+      <p id="profile-npub" class="profile-npub"></p>
+
+      <button id="btn-edit-profile" class="btn btn-secondary">
+        Editar perfil
+      </button>
+      <button id="btn-manage-accounts" class="btn btn-secondary">
+        Gestionar cuentas
+      </button>
+      <button id="btn-logout" class="btn btn-danger">
+        Cerrar sesión
+      </button>
+    </div>
+
+    <!-- Form editar perfil -->
+    <div id="profile-edit" class="hidden">
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="edit-name" placeholder="Tu nombre">
+      </div>
+      <div class="form-group">
+        <label>Acerca de</label>
+        <textarea id="edit-about" placeholder="Cuéntanos sobre ti"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Foto (URL)</label>
+        <input type="text" id="edit-picture" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>NIP-05 (opcional)</label>
+        <input type="text" id="edit-nip05" placeholder="tu@dominio.com">
+      </div>
+      <button id="btn-save-profile" class="btn btn-primary">Guardar</button>
+    </div>
+
+    <!-- Gestión de cuentas -->
+    <div id="accounts-view" class="hidden">
+      <h3>Cuentas</h3>
+      <div id="accounts-list"></div>
+      <button id="btn-add-account" class="btn btn-secondary">
+        Agregar cuenta
+      </button>
+    </div>
+  </div>
+
+  <!-- PANTALLA: VER PERFIL OTRO -->
+  <div id="screen-user-profile" class="screen">
+    <header class="header">
+      <button id="btn-back-user-profile" class="icon-btn">←</button>
+      <h2>Perfil</h2>
+      <div></div>
+    </header>
+
+    <div class="profile-container">
+      <div class="profile-avatar" id="user-profile-avatar">👤</div>
+      <h3 id="user-profile-name">Cargando...</h3>
+      <p id="user-profile-about" class="profile-about"></p>
+      <p id="user-profile-nip05" class="profile-nip05 hidden"></p>
+      <p id="user-profile-npub" class="profile-npub"></p>
+      <button id="btn-send-dm-to-user" class="btn btn-primary">
+        Enviar mensaje
+      </button>
+    </div>
+  </div>
+
+  <!-- PANTALLA: CONFIGURACIÓN -->
+  <div id="screen-settings" class="screen">
+    <header class="header">
+      <button id="btn-back-settings" class="icon-btn">←</button>
+      <h2>Configuración</h2>
+      <div></div>
+    </header>
+
+    <div class="settings-container">
+      <h3>Relays</h3>
+      <div id="relays-list"></div>
+      <div class="form-group">
+        <input type="text" id="input-new-relay" placeholder="wss://nuevo-relay.com">
+        <button id="btn-add-relay" class="btn btn-secondary">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
