@@ -235,6 +235,22 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function fallbackCopy(text, btn) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+    showToast('Copiado al portapapeles', 'success');
+  } catch (e) {
+    showToast('No se pudo copiar. Selecciona manualmente.', 'error');
+  }
+  document.body.removeChild(textarea);
+}
+
 function getReactionCount(eventId) {
   return [...state.eventCache.events.values()]
     .filter(e => e.kind === 7 && e.tags.some(t => t[0] === 'e' && t[1] === eventId))
@@ -693,13 +709,18 @@ function init() {
     btn.addEventListener('click', () => {
       const inputId = btn.dataset.copy;
       const input = $(inputId);
-      navigator.clipboard.writeText(input.value).then(() => {
-        showToast('Copiado al portapapeles', 'success');
-      }).catch(() => {
-        input.select();
-        document.execCommand('copy');
-        showToast('Copiado', 'success');
-      });
+      const text = input.value;
+
+      // Método 1: Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Copiado al portapapeles', 'success');
+        }).catch(() => {
+          fallbackCopy(text, btn);
+        });
+      } else {
+        fallbackCopy(text, btn);
+      }
     });
   });
 
