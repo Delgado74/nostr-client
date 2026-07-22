@@ -65,8 +65,13 @@
 
     <div class="compose-container">
       <textarea id="compose-text" placeholder="¿Qué estás pensando?" maxlength="10000"></textarea>
+      <div id="compose-media-preview" class="compose-media-preview hidden"></div>
       <div class="compose-footer">
-        <span id="compose-count">0/10000</span>
+        <div class="compose-actions">
+          <button id="btn-attach-media" class="icon-btn" title="Adjuntar imagen/video">📎</button>
+          <input type="file" id="file-input" accept="image/*,video/*" class="hidden">
+          <span id="compose-count">0/10000</span>
+        </div>
         <button id="btn-publish" class="btn btn-primary">Publicar</button>
       </div>
     </div>

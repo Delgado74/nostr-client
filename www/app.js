@@ -8,6 +8,8 @@ import Relay from './src/relay/connection.js';
 import { ProfileCache, EventCache } from './src/utils/cache.js';
 import { decodeBech32 } from './src/utils/bech32.js';
 import { encrypt, decrypt } from './src/utils/nip04.js';
+import { uploadToBlossom } from './src/utils/blossom.js';
+import { createMediaEvent, parseMediaEvent } from './src/utils/nip94.js';
 
 // ============================================
 // Estado de la aplicación
@@ -23,7 +25,8 @@ const state = {
   dmRecipient: null,
   renderedDmIds: new Set(),
   viewingEvent: null,
-  viewingUserProfile: null
+  viewingUserProfile: null,
+  pendingMedia: null
 };
 
 // ============================================
@@ -211,7 +214,8 @@ function subscribeToFeed() {
     { kinds: [7], limit: 50 },
     { kinds: [6], limit: 20 },
     { kinds: [4], authors: [pubHex], limit: 50 },
-    { kinds: [4], '#p': [pubHex], limit: 50 }
+    { kinds: [4], '#p': [pubHex], limit: 50 },
+    { kinds: [1063], limit: 30 }
   ];
 
   state.relayConnections.forEach(r => {
@@ -233,6 +237,10 @@ function subscribeToFeed() {
 
       if (event.kind === 4) {
         onIncomingDm(event);
+      }
+
+      if (event.kind === 1063) {
+        addMediaEventToFeed(event);
       }
     });
   });
@@ -294,6 +302,48 @@ function addEventToFeed(event) {
   feed.prepend(card);
 }
 
+function addMediaEventToFeed(event) {
+  const feed = $('feed-events');
+  if (!feed) return;
+
+  const profile = state.profileCache.get(event.pubkey);
+  const name = profile?.name || event.pubkey.slice(0, 8);
+  const nip05 = profile?.nip05 || '';
+  const media = parseMediaEvent(event);
+  if (!media || !media.url) return;
+
+  const nip05Badge = nip05 ? `<span class="nip05-badge">✓ ${nip05}</span>` : '';
+  const isImage = media.mime?.startsWith('image/');
+  const isVideo = media.mime?.startsWith('video/');
+
+  let mediaHtml = '';
+  if (isImage) {
+    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
+  } else if (isVideo) {
+    mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'event-card';
+  card.dataset.eventId = event.id;
+  card.innerHTML = `
+    <div class="event-header">
+      <div class="event-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:40px;height:40px;border-radius:50%">` : '👤'}</div>
+      <div>
+        <span class="event-author">${escapeHtml(name)}</span>${nip05Badge}
+      </div>
+      <span class="event-time">${formatTime(event.created_at)}</span>
+    </div>
+    ${event.content ? `<div class="event-content">${escapeHtml(event.content)}</div>` : ''}
+    ${mediaHtml}
+    <div class="event-tags">
+      <span class="event-tag">📎 ${media.filename || 'archivo'}</span>
+    </div>
+  `;
+
+  feed.prepend(card);
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -338,19 +388,45 @@ function showEventDetail(event) {
 // ============================================
 // Publicar nota
 // ============================================
-function publishNote(content) {
-  if (!content.trim() || !state.currentAccount) return;
+async function publishNote(content) {
+  if (!state.currentAccount) return;
 
   if (state.relayConnections.length === 0) {
     showToast('No hay relays conectados. Espera...', 'error');
     return;
   }
 
+  if (state.pendingMedia) {
+    await publishMediaNote(content, state.pendingMedia);
+    return;
+  }
+
+  if (!content.trim()) return;
+
   const event = createNote(state.currentAccount.privateKey, content);
   publish(event);
   state.eventCache.add(event);
   addEventToFeed(event);
   showToast('Nota enviada a ' + state.relayConnections.length + ' relay(s)...', 'success');
+}
+
+async function publishMediaNote(content, file) {
+  try {
+    showToast(`Subiendo ${file.name}...`, 'info');
+    const fileInfo = await uploadToBlossom(file, null, state.currentAccount.privateKey);
+    showToast(`Subido a ${fileInfo.server}. Publicando...`, 'success');
+
+    const mediaEvent = createMediaEvent(state.currentAccount.privateKey, fileInfo, content);
+    publish(mediaEvent);
+    state.eventCache.add(mediaEvent);
+    addMediaEventToFeed(mediaEvent);
+
+    clearMediaPreview();
+    showToast('Publicado con archivo adjunto', 'success');
+  } catch (err) {
+    console.error('Error uploading media:', err);
+    showToast(`Error: ${err.message}`, 'error');
+  }
 }
 
 // ============================================
@@ -801,6 +877,42 @@ function addRelay(url) {
 }
 
 // ============================================
+// Media (NIP-94 / Blossom)
+// ============================================
+function clearMediaPreview() {
+  state.pendingMedia = null;
+  const preview = $('compose-media-preview');
+  preview.innerHTML = '';
+  preview.classList.add('hidden');
+}
+
+function showMediaPreview(file) {
+  state.pendingMedia = file;
+  const preview = $('compose-media-preview');
+  preview.classList.remove('hidden');
+
+  if (file.type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    preview.innerHTML = `
+      <div class="media-preview-item">
+        <img src="${url}" alt="preview">
+        <button id="btn-remove-media" class="media-remove-btn">×</button>
+      </div>
+    `;
+  } else if (file.type.startsWith('video/')) {
+    const url = URL.createObjectURL(file);
+    preview.innerHTML = `
+      <div class="media-preview-item">
+        <video src="${url}" controls></video>
+        <button id="btn-remove-media" class="media-remove-btn">×</button>
+      </div>
+    `;
+  }
+
+  $('btn-remove-media').addEventListener('click', clearMediaPreview);
+}
+
+// ============================================
 // Buscar usuario por npub
 // ============================================
 function searchUserProfile(hexPubkey) {
@@ -816,7 +928,8 @@ function searchUserProfile(hexPubkey) {
   const subId = 'user-search-' + hexPubkey.slice(0, 8);
   const filters = [
     { authors: [hexPubkey], kinds: [0], limit: 1 },
-    { authors: [hexPubkey], kinds: [1], limit: 20 }
+    { authors: [hexPubkey], kinds: [1], limit: 20 },
+    { authors: [hexPubkey], kinds: [1063], limit: 20 }
   ];
 
   state.relayConnections.forEach(r => {
@@ -853,6 +966,41 @@ function searchUserProfile(hexPubkey) {
             <span class="event-time">${formatTime(event.created_at)}</span>
           </div>
           <div class="event-content">${escapeHtml(event.content)}</div>
+        `;
+        feed.prepend(card);
+      }
+
+      if (event.kind === 1063) {
+        const feed = $('user-profile-feed');
+        const profile = state.profileCache.get(hexPubkey);
+        const name = profile?.name || hexPubkey.slice(0, 8);
+        const media = parseMediaEvent(event);
+        if (!media || !media.url) return;
+
+        const isImage = media.mime?.startsWith('image/');
+        const isVideo = media.mime?.startsWith('video/');
+        let mediaHtml = '';
+        if (isImage) {
+          mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
+        } else if (isVideo) {
+          mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
+        }
+
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        card.innerHTML = `
+          <div class="event-header">
+            <div class="event-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:40px;height:40px;border-radius:50%">` : '👤'}</div>
+            <div>
+              <span class="event-author">${escapeHtml(name)}</span>
+            </div>
+            <span class="event-time">${formatTime(event.created_at)}</span>
+          </div>
+          ${event.content ? `<div class="event-content">${escapeHtml(event.content)}</div>` : ''}
+          ${mediaHtml}
+          <div class="event-tags">
+            <span class="event-tag">📎 ${media.filename || 'archivo'}</span>
+          </div>
         `;
         feed.prepend(card);
       }
@@ -919,10 +1067,44 @@ function init() {
     $('compose-count').textContent = `${e.target.value.length}/10000`;
   });
 
-  $('btn-publish').addEventListener('click', () => {
-    publishNote($('compose-text').value);
+  $('btn-publish').addEventListener('click', async () => {
+    const btn = $('btn-publish');
+    const content = $('compose-text').value;
+    const hasMedia = !!state.pendingMedia;
+
+    if (hasMedia && !content.trim()) {
+      // Permitir publicar imagen sin texto
+    } else if (!content.trim()) {
+      return;
+    }
+
+    btn.disabled = true;
     $('compose-text').value = '';
-    showScreen('feed');
+
+    try {
+      await publishNote(content);
+      if (!hasMedia) {
+        showScreen('feed');
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('btn-attach-media').addEventListener('click', () => {
+    $('file-input').click();
+  });
+
+  $('file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        showToast('Archivo demasiado máximo 10MB', 'error');
+        return;
+      }
+      showMediaPreview(file);
+    }
+    e.target.value = '';
   });
 
   // Reply
