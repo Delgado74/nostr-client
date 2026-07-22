@@ -225,7 +225,7 @@ function subscribeToFeed() {
       if (event.kind === 0) {
         const profile = parseProfile(event.content);
         state.profileCache.set(event.pubkey, profile);
-        if (event.pubkey === pubHex && state.currentScreen === 'profile') {
+        if (event.pubkey === pubHex) {
           loadProfile();
         }
         return;
