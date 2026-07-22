@@ -209,8 +209,9 @@ function subscribeToFeed() {
   const subId = 'main-feed';
   const pubHex = state.currentAccount?.publicKey;
   const filters = [
-    { kinds: [1], limit: 20 },
+    { authors: [pubHex], kinds: [0], limit: 1 },
     { kinds: [0], limit: 30 },
+    { kinds: [1], limit: 20 },
     { kinds: [7], limit: 50 },
     { kinds: [6], limit: 20 },
     { kinds: [4], authors: [pubHex], limit: 50 },
@@ -224,6 +225,9 @@ function subscribeToFeed() {
       if (event.kind === 0) {
         const profile = parseProfile(event.content);
         state.profileCache.set(event.pubkey, profile);
+        if (event.pubkey === pubHex && state.currentScreen === 'profile') {
+          loadProfile();
+        }
         return;
       }
 
