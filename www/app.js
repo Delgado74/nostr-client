@@ -468,7 +468,6 @@ async function showDmList() {
     }
   }
 
-  dmList.innerHTML = '';
   for (const [otherPubkey, lastDm] of conversations) {
     const decrypted = await decryptDmContent(lastDm);
     const profile = state.profileCache.get(otherPubkey);
