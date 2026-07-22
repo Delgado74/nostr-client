@@ -176,7 +176,6 @@ async function connectToRelays() {
     const names = state.relayConnections.map(r => new URL(r.url).hostname).join(', ');
     showToast(`Conectado: ${names}`, 'success');
     subscribeToFeed();
-    publishInitialProfile();
   } else {
     showToast('No se pudo conectar a ningún relay', 'error');
   }
@@ -184,9 +183,6 @@ async function connectToRelays() {
 
 function publishInitialProfile() {
   if (!state.currentAccount) return;
-
-  const cached = state.profileCache.get(state.currentAccount.publicKey);
-  if (cached && cached.name) return;
 
   const profileData = {
     name: 'NostraIsla User',
@@ -888,7 +884,7 @@ function init() {
     if (account) {
       $('screen-login').classList.remove('active');
       showScreen('feed');
-      connectToRelays();
+      connectToRelays().then(() => publishInitialProfile());
     }
   });
 
