@@ -42,12 +42,16 @@ function saveAccounts() {
   });
   localStorage.setItem('nostra_isla_accounts', JSON.stringify(state.accounts));
   localStorage.setItem('nostra_isla_relays', JSON.stringify(state.relays));
+  if (state.currentAccount) {
+    localStorage.setItem('nostra_isla_active', state.currentAccount.publicKey);
+  }
 }
 
 function loadAccounts() {
   try {
     const accounts = localStorage.getItem('nostra_isla_accounts');
     const relays = localStorage.getItem('nostra_isla_relays');
+    const activePubkey = localStorage.getItem('nostra_isla_active');
     if (accounts) {
       state.accounts = JSON.parse(accounts).map(acc => {
         if (acc.privateKey && acc.publicKey) {
@@ -58,6 +62,13 @@ function loadAccounts() {
       });
     }
     if (relays) state.relays = JSON.parse(relays);
+    if (activePubkey && state.accounts.length > 0) {
+      const found = state.accounts.find(a => a.publicKey === activePubkey);
+      if (found) state.currentAccount = found;
+      else state.currentAccount = state.accounts[0];
+    } else if (state.accounts.length > 0) {
+      state.currentAccount = state.accounts[0];
+    }
   } catch (e) {
     console.error('Error loading accounts:', e);
   }
@@ -1020,7 +1031,7 @@ function init() {
   loadAccounts();
 
   if (state.accounts.length > 0) {
-    state.currentAccount = state.accounts[0];
+    if (!state.currentAccount) state.currentAccount = state.accounts[0];
     $('screen-login').classList.remove('active');
     showScreen('feed');
     connectToRelays();
@@ -1146,7 +1157,22 @@ function init() {
   });
 
   // Profile
-  $('btn-back-profile')?.addEventListener('click', () => showScreen('feed'));
+  $('btn-back-profile')?.addEventListener('click', () => {
+    if (!$('accounts-view').classList.contains('hidden')) {
+      $('accounts-view').classList.add('hidden');
+      $('profile-view').classList.remove('hidden');
+      $('profile-edit').classList.add('hidden');
+      loadProfile();
+      return;
+    }
+    if (!$('profile-edit').classList.contains('hidden')) {
+      $('profile-edit').classList.add('hidden');
+      $('profile-view').classList.remove('hidden');
+      $('accounts-view').classList.add('hidden');
+      return;
+    }
+    showScreen('feed');
+  });
 
   $('btn-edit-profile').addEventListener('click', () => {
     $('profile-view').classList.add('hidden');

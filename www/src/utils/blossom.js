@@ -38,6 +38,41 @@ function encodeAuthHeader(authEvent) {
   return `Nostr ${encoded}`;
 }
 
+function doFetch(url, options) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(options.method || 'GET', url, true);
+
+    if (options.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        xhr.setRequestHeader(key, value);
+      }
+    }
+
+    xhr.timeout = 30000;
+    xhr.onload = () => {
+      const responseHeaders = {};
+      xhr.getAllResponseHeaders().split('\r\n').forEach(line => {
+        const [key, ...rest] = line.split(':');
+        if (key) responseHeaders[key.trim().toLowerCase()] = rest.join(':').trim();
+      });
+
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        statusText: xhr.statusText,
+        headers: {
+          get: (name) => responseHeaders[name.toLowerCase()] || null
+        },
+        json: () => Promise.resolve(JSON.parse(xhr.responseText))
+      });
+    };
+    xhr.onerror = () => reject(new Error('Error de red (XHR)'));
+    xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado'));
+    xhr.send(options.body || null);
+  });
+}
+
 export async function uploadToBlossom(file, serverUrl, privateKey) {
   if (!privateKey) throw new Error('Se requiere clave privada para subir a Blossom');
 
@@ -56,15 +91,15 @@ export async function uploadToBlossom(file, serverUrl, privateKey) {
 
       console.log(`Blossom: uploading to ${uploadUrl} (${file.size} bytes)`);
 
-      const response = await fetch(uploadUrl, {
+      const blob = new Blob([fileBytes], { type: file.type || 'application/octet-stream' });
+      const response = await doFetch(uploadUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
-          'Content-Length': String(file.size),
           'X-SHA-256': hash,
           'Authorization': authHeader
         },
-        body: fileBytes
+        body: blob
       });
 
       console.log(`Blossom: ${server} responded ${response.status}`);
@@ -82,7 +117,7 @@ export async function uploadToBlossom(file, serverUrl, privateKey) {
         };
       }
 
-      const reason = response.headers.get('X-Reason') || response.statusText;
+      const reason = response.headers.get('x-reason') || response.statusText;
       errors.push(`${server}: ${response.status} ${reason}`);
       console.log(`Blossom: rejected - ${reason}`);
     } catch (e) {
