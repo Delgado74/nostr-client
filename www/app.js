@@ -15,7 +15,7 @@ import { encrypt, decrypt } from './src/utils/nip04.js';
 const state = {
   currentAccount: null,
   accounts: [],
-  relays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band'],
+  relays: ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.nostr.band', 'wss://relay.mostro.network'],
   relayConnections: [],
   profileCache: new ProfileCache(),
   eventCache: new EventCache(),
