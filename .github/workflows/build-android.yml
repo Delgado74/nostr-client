@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/http
 
       - name: Init Capacitor
         run: |
@@ -41,7 +41,7 @@ jobs:
         run: npx cap add android
 
       - name: Copy web assets
-        run: npx cap copy android
+        run: npx cap copy android && npx cap sync android
 
       - name: Fix Kotlin stdlib duplicate classes
         run: |

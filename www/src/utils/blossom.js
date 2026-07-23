@@ -38,38 +38,33 @@ function encodeAuthHeader(authEvent) {
   return `Nostr ${encoded}`;
 }
 
-function doFetch(url, options) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(options.method || 'GET', url, true);
+function isNative() {
+  return !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Http);
+}
 
-    if (options.headers) {
-      for (const [key, value] of Object.entries(options.headers)) {
-        xhr.setRequestHeader(key, value);
-      }
-    }
-
-    xhr.timeout = 30000;
-    xhr.onload = () => {
-      const responseHeaders = {};
-      xhr.getAllResponseHeaders().split('\r\n').forEach(line => {
-        const [key, ...rest] = line.split(':');
-        if (key) responseHeaders[key.trim().toLowerCase()] = rest.join(':').trim();
-      });
-
-      resolve({
-        ok: xhr.status >= 200 && xhr.status < 300,
-        status: xhr.status,
-        statusText: xhr.statusText,
-        headers: {
-          get: (name) => responseHeaders[name.toLowerCase()] || null
-        },
-        json: () => Promise.resolve(JSON.parse(xhr.responseText))
-      });
+async function httpPut(url, headers, body) {
+  if (isNative()) {
+    console.log('Blossom: using CapacitorHttp (native)');
+    const result = await window.Capacitor.Plugins.Http.request({
+      method: 'PUT',
+      url,
+      headers,
+      data: body
+    });
+    return {
+      ok: result.status >= 200 && result.status < 300,
+      status: result.status,
+      statusText: '',
+      headers: { get: (name) => result.headers[name] || null },
+      json: () => Promise.resolve(result.data)
     };
-    xhr.onerror = () => reject(new Error('Error de red (XHR)'));
-    xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado'));
-    xhr.send(options.body || null);
+  }
+
+  console.log('Blossom: using fetch');
+  return fetch(url, {
+    method: 'PUT',
+    headers,
+    body
   });
 }
 
@@ -89,18 +84,21 @@ export async function uploadToBlossom(file, serverUrl, privateKey) {
       const authEvent = createAuthEvent(privateKey, hash, serverDomain);
       const authHeader = encodeAuthHeader(authEvent);
 
-      console.log(`Blossom: uploading to ${uploadUrl} (${file.size} bytes)`);
+      console.log(`Blossom: uploading to ${uploadUrl} (${file.size} bytes, native=${isNative()})`);
 
-      const blob = new Blob([fileBytes], { type: file.type || 'application/octet-stream' });
-      const response = await doFetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'X-SHA-256': hash,
-          'Authorization': authHeader
-        },
-        body: blob
-      });
+      const headers = {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-SHA-256': hash,
+        'Authorization': authHeader
+      };
+
+      let response;
+      if (isNative()) {
+        response = await httpPut(uploadUrl, headers, fileBytes);
+      } else {
+        const blob = new Blob([fileBytes], { type: file.type || 'application/octet-stream' });
+        response = await httpPut(uploadUrl, headers, blob);
+      }
 
       console.log(`Blossom: ${server} responded ${response.status}`);
 
