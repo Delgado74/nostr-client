@@ -8,7 +8,7 @@ import Relay from './src/relay/connection.js';
 import { ProfileCache, EventCache } from './src/utils/cache.js';
 import { decodeBech32 } from './src/utils/bech32.js';
 import { encrypt, decrypt } from './src/utils/nip04.js';
-import { uploadToBlossom } from './src/utils/blossom.js';
+import { uploadMedia } from './src/utils/blossom.js';
 import { createMediaEvent, parseMediaEvent } from './src/utils/nip94.js';
 
 // ============================================
@@ -424,8 +424,8 @@ async function publishNote(content) {
 async function publishMediaNote(content, file) {
   try {
     showToast(`Subiendo ${file.name}...`, 'info');
-    const fileInfo = await uploadToBlossom(file, null, state.currentAccount.privateKey);
-    showToast(`Subido a ${fileInfo.server}. Publicando...`, 'success');
+    const fileInfo = await uploadMedia(file, state.currentAccount.privateKey);
+    showToast(`Subido. Publicando...`, 'success');
 
     const mediaEvent = createMediaEvent(state.currentAccount.privateKey, fileInfo, content);
     publish(mediaEvent);

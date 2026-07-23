@@ -1,26 +1,9 @@
 import { sha256 } from 'https://esm.sh/@noble/hashes/sha2.js';
 import { bytesToHex } from 'https://esm.sh/@noble/hashes/utils.js';
-import { createEvent } from './event.js';
 
 async function sha256Hex(data) {
   const buffer = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
   return bytesToHex(sha256(new Uint8Array(buffer)));
-}
-
-function createMediaEvent(privateKey, fileInfo, message = '') {
-  const tags = [
-    ['url', fileInfo.url],
-    ['x', fileInfo.sha256],
-    ['size', String(fileInfo.size)],
-    ['m', fileInfo.type],
-    ['blurhash', '']
-  ];
-
-  if (fileInfo.name) {
-    tags.push(['filename', fileInfo.name]);
-  }
-
-  return createEvent(privateKey, 1063, message, tags);
 }
 
 async function uploadToCatbox(file) {
@@ -72,5 +55,3 @@ export async function uploadMedia(file, privateKey) {
     name: file.name
   };
 }
-
-export { createMediaEvent };
