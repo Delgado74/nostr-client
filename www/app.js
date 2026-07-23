@@ -324,14 +324,17 @@ function addMediaEventToFeed(event) {
   if (!media || !media.url) return;
 
   const nip05Badge = nip05 ? `<span class="nip05-badge">✓ ${nip05}</span>` : '';
-  const isImage = media.mime?.startsWith('image/');
-  const isVideo = media.mime?.startsWith('video/');
+  const mime = media.mime || '';
+  const isImage = mime.startsWith('image/') || (!mime && /\.(jpg|jpeg|png|gif|webp|svg|bmp)/i.test(media.filename || media.url || ''));
+  const isVideo = mime.startsWith('video/');
 
   let mediaHtml = '';
   if (isImage) {
-    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
+    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy" onerror="this.style.display='none'"></div>`;
   } else if (isVideo) {
     mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
+  } else {
+    mediaHtml = `<div class="event-media"><a href="${media.url}" target="_blank" rel="noopener">📎 ${media.filename || 'archivo'}</a></div>`;
   }
 
   const card = document.createElement('div');
@@ -988,13 +991,16 @@ function searchUserProfile(hexPubkey) {
         const media = parseMediaEvent(event);
         if (!media || !media.url) return;
 
-        const isImage = media.mime?.startsWith('image/');
-        const isVideo = media.mime?.startsWith('video/');
+        const mime = media.mime || '';
+        const isImage = mime.startsWith('image/') || (!mime && /\.(jpg|jpeg|png|gif|webp|svg|bmp)/i.test(media.filename || media.url || ''));
+        const isVideo = mime.startsWith('video/');
         let mediaHtml = '';
         if (isImage) {
-          mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
+          mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy" onerror="this.style.display='none'"></div>`;
         } else if (isVideo) {
           mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
+        } else {
+          mediaHtml = `<div class="event-media"><a href="${media.url}" target="_blank" rel="noopener">📎 ${media.filename || 'archivo'}</a></div>`;
         }
 
         const card = document.createElement('div');
@@ -1094,9 +1100,7 @@ function init() {
 
     try {
       await publishNote(content);
-      if (!hasMedia) {
-        showScreen('feed');
-      }
+      showScreen('feed');
     } finally {
       btn.disabled = false;
     }
