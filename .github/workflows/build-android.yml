@@ -34,8 +34,12 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Init Capacitor
+        run: npx cap init "NostraIsla" "com.nostra.isla" --web-dir www
+
+      - name: Enable CapacitorHttp
         run: |
-          npx cap init "NostraIsla" "com.nostra.isla" --web-dir www
+          rm -f capacitor.config.ts capacitor.config.js
+          printf '{"appId":"com.nostra.isla","appName":"NostraIsla","webDir":"www","server":{"androidScheme":"https"},"plugins":{"CapacitorHttp":{"enabled":true}}}' > capacitor.config.json
 
       - name: Add Android platform
         run: npx cap add android
