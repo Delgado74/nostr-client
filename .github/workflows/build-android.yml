@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install @capacitor/core@5 @capacitor/cli@5 @capacitor/android@5
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Init Capacitor
         run: npx cap init "NostraIsla" "com.nostra.isla" --web-dir www
