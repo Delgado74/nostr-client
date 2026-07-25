@@ -351,7 +351,7 @@ function addEventToFeed(event) {
 
   let mediaHtml = '';
   for (const url of images) {
-    mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy"></div>`;
+    mediaHtml += `<div class="event-media"><img src="${url}" crossorigin="anonymous" loading="lazy"></div>`;
   }
   for (const url of videos) {
     mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
@@ -399,6 +399,10 @@ function addEventToFeed(event) {
 function addMediaEventToFeed(event) {
   const feed = $('feed-events');
   if (!feed) return;
+  if (renderedIds.has(event.id)) return;
+  renderedIds.add(event.id);
+
+  if (state.feedFilter === 'following' && !state.following.has(event.pubkey) && event.pubkey !== state.currentAccount?.publicKey) return;
 
   const profile = state.profileCache.get(event.pubkey);
   const name = profile?.name || event.pubkey.slice(0, 8);
@@ -413,7 +417,7 @@ function addMediaEventToFeed(event) {
 
   let mediaHtml = '';
   if (isImage) {
-    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy" onerror="this.style.display='none'"></div>`;
+    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
   } else if (isVideo) {
     mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
   } else {
@@ -853,6 +857,7 @@ function createAccount() {
 
     state.accounts.push(account);
     state.currentAccount = account;
+    state.profileCache.set(publicKey, { name: 'NostraIsla User', about: '' });
     saveAccounts();
 
     showToast('Cuenta creada', 'success');
@@ -890,6 +895,7 @@ function importAccount(nsecInput) {
 
     state.accounts.push(account);
     state.currentAccount = account;
+    state.profileCache.set(publicKey, { name: 'Cuenta importada', about: '' });
     saveAccounts();
 
     showToast('Cuenta importada', 'success');
@@ -1099,6 +1105,7 @@ function searchUserProfile(hexPubkey) {
   $('user-profile-feed').innerHTML = '';
   updateFollowButton(hexPubkey);
 
+  const profileRenderedIds = new Set();
   const subId = 'user-search-' + hexPubkey.slice(0, 8);
   const filters = [
     { authors: [hexPubkey], kinds: [0], limit: 1 },
@@ -1108,6 +1115,8 @@ function searchUserProfile(hexPubkey) {
 
   state.relayConnections.forEach(r => {
     r.subscribe(subId, filters, (event) => {
+      if (profileRenderedIds.has(event.id)) return;
+      profileRenderedIds.add(event.id);
       state.eventCache.add(event);
 
       if (event.kind === 0) {
@@ -1139,7 +1148,7 @@ function searchUserProfile(hexPubkey) {
 
           let mediaHtml = '';
           for (const url of images) {
-            mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy"></div>`;
+            mediaHtml += `<div class="event-media"><img src="${url}" crossorigin="anonymous" loading="lazy"></div>`;
           }
           for (const url of videos) {
             mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
