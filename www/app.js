@@ -1026,36 +1026,40 @@ function searchUserProfile(hexPubkey) {
       }
 
       if (event.kind === 1) {
-        const feed = $('user-profile-feed');
-        const profile = state.profileCache.get(hexPubkey);
-        const name = profile?.name || hexPubkey.slice(0, 8);
+        try {
+          const feed = $('user-profile-feed');
+          const profile = state.profileCache.get(hexPubkey);
+          const name = profile?.name || hexPubkey.slice(0, 8);
 
-        const { images, videos } = extractMediaFromContent(event.content);
-        const mediaUrls = new Set([...images, ...videos]);
-        const cleanContent = event.content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
+          const { images, videos } = extractMediaFromContent(event.content);
+          const mediaUrls = new Set([...images, ...videos]);
+          const cleanContent = event.content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
 
-        let mediaHtml = '';
-        for (const url of images) {
-          mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
-        }
-        for (const url of videos) {
-          mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
-        }
+          let mediaHtml = '';
+          for (const url of images) {
+            mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
+          }
+          for (const url of videos) {
+            mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
+          }
 
-        const card = document.createElement('div');
-        card.className = 'event-card';
-        card.innerHTML = `
-          <div class="event-header">
-            <div class="event-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:40px;height:40px;border-radius:50%">` : '👤'}</div>
-            <div>
-              <span class="event-author">${escapeHtml(name)}</span>
+          const card = document.createElement('div');
+          card.className = 'event-card';
+          card.innerHTML = `
+            <div class="event-header">
+              <div class="event-avatar">${profile?.picture ? `<img src="${profile.picture}" style="width:40px;height:40px;border-radius:50%">` : '👤'}</div>
+              <div>
+                <span class="event-author">${escapeHtml(name)}</span>
+              </div>
+              <span class="event-time">${formatTime(event.created_at)}</span>
             </div>
-            <span class="event-time">${formatTime(event.created_at)}</span>
-          </div>
-          ${cleanContent ? `<div class="event-content">${escapeHtml(cleanContent)}</div>` : ''}
-          ${mediaHtml}
-        `;
-        feed.prepend(card);
+            ${cleanContent ? `<div class="event-content">${escapeHtml(cleanContent)}</div>` : ''}
+            ${mediaHtml}
+          `;
+          feed.prepend(card);
+        } catch (err) {
+          console.error('Error rendering kind:1 in user-profile:', err.message, event);
+        }
       }
 
       if (event.kind === 1063) {
