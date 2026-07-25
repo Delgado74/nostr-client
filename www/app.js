@@ -9,7 +9,7 @@ import { ProfileCache, EventCache } from './src/utils/cache.js';
 import { decodeBech32 } from './src/utils/bech32.js';
 import { encrypt, decrypt } from './src/utils/nip04.js';
 import { uploadMedia } from './src/utils/blossom.js';
-import { createMediaEvent, parseMediaEvent } from './src/utils/nip94.js';
+import { parseMediaEvent } from './src/utils/nip94.js';
 
 // ============================================
 // Estado de la aplicación
@@ -257,6 +257,22 @@ function subscribeToFeed() {
   });
 }
 
+function extractMediaFromContent(text) {
+  const images = [];
+  const videos = [];
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  let match;
+  while ((match = urlRegex.exec(text)) !== null) {
+    const url = match[1];
+    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(url)) {
+      images.push(url);
+    } else if (/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url)) {
+      videos.push(url);
+    }
+  }
+  return { images, videos };
+}
+
 function addEventToFeed(event) {
   const feed = $('feed-events');
   if (!feed) return;
@@ -275,6 +291,18 @@ function addEventToFeed(event) {
 
   const nip05Badge = nip05 ? `<span class="nip05-badge">✓ ${nip05}</span>` : '';
 
+  const { images, videos } = extractMediaFromContent(event.content);
+  const mediaUrls = new Set([...images, ...videos]);
+  const cleanContent = event.content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
+
+  let mediaHtml = '';
+  for (const url of images) {
+    mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
+  }
+  for (const url of videos) {
+    mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
+  }
+
   const card = document.createElement('div');
   card.className = 'event-card';
   card.dataset.eventId = event.id;
@@ -287,7 +315,8 @@ function addEventToFeed(event) {
       </div>
       <span class="event-time">${formatTime(event.created_at)}</span>
     </div>
-    <div class="event-content">${escapeHtml(event.content)}</div>
+    ${cleanContent ? `<div class="event-content">${escapeHtml(cleanContent)}</div>` : ''}
+    ${mediaHtml}
     <div class="event-tags">
       <span class="event-tag reply" data-action="reply" data-id="${event.id}">💬 Responder</span>
       <span class="event-tag reaction" data-action="react" data-id="${event.id}">❤ ${getReactionCount(event.id)}</span>
@@ -430,10 +459,19 @@ async function publishMediaNote(content, file) {
     const fileInfo = await uploadMedia(file, state.currentAccount.privateKey);
     showToast(`Subido. Publicando...`, 'success');
 
-    const mediaEvent = createMediaEvent(state.currentAccount.privateKey, fileInfo, content);
-    publish(mediaEvent);
-    state.eventCache.add(mediaEvent);
-    addMediaEventToFeed(mediaEvent);
+    const noteContent = content ? `${content}\n\n${fileInfo.url}` : fileInfo.url;
+    const imetaTags = [
+      ['imeta', 'url ' + fileInfo.url]
+    ];
+    if (fileInfo.type) imetaTags[0].push('m ' + fileInfo.type);
+    if (fileInfo.sha256) imetaTags[0].push('x ' + fileInfo.sha256);
+    if (fileInfo.size) imetaTags[0].push('size ' + String(fileInfo.size));
+    if (fileInfo.name) imetaTags[0].push('filename ' + fileInfo.name);
+
+    const event = createEvent(state.currentAccount.privateKey, 1, noteContent, imetaTags);
+    publish(event);
+    state.eventCache.add(event);
+    addEventToFeed(event);
 
     clearMediaPreview();
     showToast('Publicado con archivo adjunto', 'success');
