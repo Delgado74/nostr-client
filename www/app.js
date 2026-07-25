@@ -12,6 +12,29 @@ import { uploadMedia } from './src/utils/blossom.js';
 import { parseMediaEvent } from './src/utils/nip94.js';
 
 // ============================================
+// Sistema de logs
+// ============================================
+const appLogs = [];
+const _origLog = console.log.bind(console);
+const _origWarn = console.warn.bind(console);
+const _origError = console.error.bind(console);
+
+function addLog(level, args) {
+  const ts = new Date().toLocaleTimeString();
+  const msg = args.map(a => (typeof a === 'object') ? JSON.stringify(a) : String(a)).join(' ');
+  appLogs.push(`[${ts}] ${level}: ${msg}`);
+  if (appLogs.length > 500) appLogs.shift();
+}
+
+console.log = (...args) => { addLog('LOG', args); _origLog(...args); };
+console.warn = (...args) => { addLog('WARN', args); _origWarn(...args); };
+console.error = (...args) => { addLog('ERROR', args); _origError(...args); };
+
+window.addEventListener('unhandledrejection', (e) => {
+  addLog('UNHANDLED', [e.reason?.message || e.reason || 'Unknown promise rejection']);
+});
+
+// ============================================
 // Estado de la aplicación
 // ============================================
 const state = {
@@ -1281,6 +1304,36 @@ function init() {
   });
 
   renderRelays();
+
+  // Logs
+  $('btn-show-logs')?.addEventListener('click', () => {
+    const output = $('logs-output');
+    output.classList.toggle('hidden');
+    output.textContent = appLogs.join('\n') || '(vacío)';
+    output.scrollTop = output.scrollHeight;
+  });
+
+  $('btn-copy-logs')?.addEventListener('click', () => {
+    const text = appLogs.join('\n');
+    if (!text) { showToast('No hay logs', 'error'); return; }
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Logs copiados', 'success');
+    }).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('Logs copiados', 'success');
+    });
+  });
+
+  $('btn-clear-logs')?.addEventListener('click', () => {
+    appLogs.length = 0;
+    $('logs-output').textContent = '(vacío)';
+    showToast('Logs limpiados');
+  });
 
   // Side menu
   $('btn-menu').addEventListener('click', openSideMenu);
