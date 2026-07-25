@@ -6,149 +6,99 @@ async function sha256Hex(data) {
   return bytesToHex(sha256(new Uint8Array(buffer)));
 }
 
-function isNativeApp() {
-  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+function getNativeHttp() {
+  try {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Http) {
+      return window.Capacitor.Plugins.Http;
+    }
+  } catch (e) {}
+  return null;
 }
 
-function nativeHttpPost(url, formData) {
-  const { Http } = window.Capacitor.Plugins;
-  return Http.request({
+async function nativeUpload(url, formData) {
+  const http = getNativeHttp();
+  console.log('Native HTTP available:', !!http);
+  if (!http) throw new Error('No native HTTP');
+
+  const response = await http.request({
     method: 'POST',
     url,
     data: formData,
-    headers: {
-      'User-Agent': 'NostraIsla/1.0'
-    }
+    headers: {}
   });
-}
 
-async function uploadToCatboxNative(file) {
-  const formData = new FormData();
-  formData.append('reqtype', 'fileupload');
-  formData.append('fileToUpload', file);
-
-  console.log('Catbox (native): uploading', file.name);
-  const response = await nativeHttpPost('https://catbox.moe/user/api.php', formData);
-  console.log('Catbox (native): response', response.status, response.data);
-
+  console.log('Native response:', response.status, typeof response.data);
   if (response.status >= 400) {
-    throw new Error(`Catbox: ${response.status}`);
+    throw new Error(`HTTP ${response.status}`);
   }
 
-  const url = (typeof response.data === 'string' ? response.data : '').trim();
-  if (!url.startsWith('https://')) {
-    throw new Error(`Catbox: respuesta inválida: ${url}`);
-  }
-  return url;
+  const text = typeof response.data === 'string' ? response.data :
+    (response.data && response.data.data ? response.data.data : JSON.stringify(response.data));
+  return text.trim();
 }
 
-async function uploadToLitterboxNative(file) {
-  const formData = new FormData();
-  formData.append('reqtype', 'fileupload');
-  formData.append('time', '72h');
-  formData.append('fileToUpload', file);
-
-  console.log('Litterbox (native): uploading', file.name);
-  const response = await nativeHttpPost('https://litterbox.catbox.moe/resources/internals/api.php', formData);
-  console.log('Litterbox (native): response', response.status, response.data);
-
-  if (response.status >= 400) {
-    throw new Error(`Litterbox: ${response.status}`);
-  }
-
-  const url = (typeof response.data === 'string' ? response.data : '').trim();
-  if (!url.startsWith('https://')) {
-    throw new Error(`Litterbox: respuesta inválida: ${url}`);
-  }
-  return url;
-}
-
-async function uploadTo0x0Native(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  console.log('0x0.st (native): uploading', file.name);
-  const response = await nativeHttpPost('https://0x0.st', formData);
-  console.log('0x0.st (native): response', response.status, response.data);
-
-  if (response.status >= 400) {
-    throw new Error(`0x0.st: ${response.status}`);
-  }
-
-  const url = (typeof response.data === 'string' ? response.data : '').trim();
-  if (!url.startsWith('https://')) {
-    throw new Error(`0x0.st: respuesta inválida: ${url}`);
-  }
-  return url;
-}
-
-async function uploadToCatboxFetch(file) {
-  const formData = new FormData();
-  formData.append('reqtype', 'fileupload');
-  formData.append('fileToUpload', file);
-
-  const response = await fetch('https://catbox.moe/user/api.php', {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) throw new Error(`Catbox: ${response.status}`);
-  const url = (await response.text()).trim();
-  if (!url.startsWith('https://')) throw new Error(`Catbox: inválido: ${url}`);
-  return url;
-}
-
-async function uploadToLitterboxFetch(file) {
-  const formData = new FormData();
-  formData.append('reqtype', 'fileupload');
-  formData.append('time', '72h');
-  formData.append('fileToUpload', file);
-
-  const response = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) throw new Error(`Litterbox: ${response.status}`);
-  const url = (await response.text()).trim();
-  if (!url.startsWith('https://')) throw new Error(`Litterbox: inválido: ${url}`);
-  return url;
-}
-
-async function uploadTo0x0Fetch(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch('https://0x0.st', {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) throw new Error(`0x0.st: ${response.status}`);
-  const url = (await response.text()).trim();
-  if (!url.startsWith('https://')) throw new Error(`0x0.st: inválido: ${url}`);
-  return url;
+async function fetchUpload(url, formData) {
+  const response = await fetch(url, { method: 'POST', body: formData });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.text()).trim();
 }
 
 async function uploadWithFallback(file) {
-  const isNative = isNativeApp();
+  const http = getNativeHttp();
+  const mode = http ? 'native' : 'fetch';
+  console.log(`Upload mode: ${mode}, Capacitor: ${!!window.Capacitor}`);
 
-  const services = isNative ? [
-    { name: 'Catbox', fn: uploadToCatboxNative },
-    { name: 'Litterbox', fn: uploadToLitterboxNative },
-    { name: '0x0.st', fn: uploadTo0x0Native }
-  ] : [
-    { name: 'Catbox', fn: uploadToCatboxFetch },
-    { name: 'Litterbox', fn: uploadToLitterboxFetch },
-    { name: '0x0.st', fn: uploadTo0x0Fetch }
+  const services = [
+    {
+      name: 'Catbox',
+      url: 'https://catbox.moe/user/api.php',
+      buildForm: (f) => {
+        const fd = new FormData();
+        fd.append('reqtype', 'fileupload');
+        fd.append('fileToUpload', f);
+        return fd;
+      }
+    },
+    {
+      name: 'Litterbox',
+      url: 'https://litterbox.catbox.moe/resources/internals/api.php',
+      buildForm: (f) => {
+        const fd = new FormData();
+        fd.append('reqtype', 'fileupload');
+        fd.append('time', '72h');
+        fd.append('fileToUpload', f);
+        return fd;
+      }
+    },
+    {
+      name: '0x0.st',
+      url: 'https://0x0.st',
+      buildForm: (f) => {
+        const fd = new FormData();
+        fd.append('file', f);
+        return fd;
+      }
+    }
   ];
 
   for (const service of services) {
     try {
-      console.log(`Intentando subir con ${service.name} (${isNative ? 'native' : 'fetch'})...`);
-      const url = await service.fn(file);
-      console.log(`${service.name}: OK -> ${url}`);
-      return url;
+      const formData = service.buildForm(file);
+      console.log(`Intentando ${service.name} (${mode})...`);
+
+      let result;
+      if (http) {
+        result = await nativeUpload(service.url, formData);
+      } else {
+        result = await fetchUpload(service.url, formData);
+      }
+
+      if (!result.startsWith('https://')) {
+        throw new Error(`Respuesta inválida: ${result}`);
+      }
+
+      console.log(`${service.name}: OK -> ${result}`);
+      return result;
     } catch (e) {
       console.warn(`${service.name} falló: ${e.message}`);
     }
