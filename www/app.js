@@ -49,7 +49,8 @@ const state = {
   renderedDmIds: new Set(),
   viewingEvent: null,
   viewingUserProfile: null,
-  pendingMedia: null
+  pendingMedia: null,
+  feedFilter: 'all'
 };
 
 // ============================================
@@ -296,9 +297,20 @@ function extractMediaFromContent(text) {
   return { images, videos };
 }
 
+function hasMedia(event) {
+  if (event.kind === 1063) return true;
+  if (event.kind === 1) {
+    const { images, videos } = extractMediaFromContent(event.content);
+    return images.length > 0 || videos.length > 0;
+  }
+  return false;
+}
+
 function addEventToFeed(event) {
   const feed = $('feed-events');
   if (!feed) return;
+
+  if (state.feedFilter === 'media' && !hasMedia(event)) return;
 
   const isReply = event.tags.some(t => t[0] === 'e');
   const profile = state.profileCache.get(event.pubkey);
@@ -408,6 +420,22 @@ function addMediaEventToFeed(event) {
   `;
 
   feed.prepend(card);
+}
+
+function renderFeed() {
+  const feed = $('feed-events');
+  if (!feed) return;
+  feed.innerHTML = '';
+  const allEvents = Array.from(state.eventCache.events.values())
+    .filter(e => e.kind === 1 || e.kind === 1063)
+    .sort((a, b) => b.created_at - a.created_at);
+  for (const event of allEvents) {
+    if (event.kind === 1063) {
+      addMediaEventToFeed(event);
+    } else {
+      addEventToFeed(event);
+    }
+  }
 }
 
 function escapeHtml(text) {
@@ -1031,9 +1059,12 @@ function searchUserProfile(hexPubkey) {
           const profile = state.profileCache.get(hexPubkey);
           const name = profile?.name || hexPubkey.slice(0, 8);
 
-          const { images, videos } = extractMediaFromContent(event.content);
+          const content = event.content || '';
+          const { images, videos } = extractMediaFromContent(content);
           const mediaUrls = new Set([...images, ...videos]);
-          const cleanContent = event.content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
+          const cleanContent = content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
+
+          console.log('user-profile kind:1:', { content: content.slice(0, 80), images, videos, cleanContent: cleanContent.slice(0, 50) });
 
           let mediaHtml = '';
           for (const url of images) {
@@ -1310,6 +1341,21 @@ function init() {
     state.relayConnections = [];
     showScreen('login');
     showToast('Sesión cerrada');
+  });
+
+  // Feed filters
+  $('btn-filter-all')?.addEventListener('click', () => {
+    state.feedFilter = 'all';
+    $('btn-filter-all').classList.add('active');
+    $('btn-filter-media').classList.remove('active');
+    renderFeed();
+  });
+
+  $('btn-filter-media')?.addEventListener('click', () => {
+    state.feedFilter = 'media';
+    $('btn-filter-media').classList.add('active');
+    $('btn-filter-all').classList.remove('active');
+    renderFeed();
   });
 
   // Settings
