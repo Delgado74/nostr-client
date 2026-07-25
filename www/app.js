@@ -1030,6 +1030,18 @@ function searchUserProfile(hexPubkey) {
         const profile = state.profileCache.get(hexPubkey);
         const name = profile?.name || hexPubkey.slice(0, 8);
 
+        const { images, videos } = extractMediaFromContent(event.content);
+        const mediaUrls = new Set([...images, ...videos]);
+        const cleanContent = event.content.replace(/https?:\/\/[^\s]+/g, (url) => mediaUrls.has(url) ? '' : url).trim();
+
+        let mediaHtml = '';
+        for (const url of images) {
+          mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
+        }
+        for (const url of videos) {
+          mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
+        }
+
         const card = document.createElement('div');
         card.className = 'event-card';
         card.innerHTML = `
@@ -1040,7 +1052,8 @@ function searchUserProfile(hexPubkey) {
             </div>
             <span class="event-time">${formatTime(event.created_at)}</span>
           </div>
-          <div class="event-content">${escapeHtml(event.content)}</div>
+          ${cleanContent ? `<div class="event-content">${escapeHtml(cleanContent)}</div>` : ''}
+          ${mediaHtml}
         `;
         feed.prepend(card);
       }
