@@ -50,7 +50,8 @@ const state = {
   viewingEvent: null,
   viewingUserProfile: null,
   pendingMedia: null,
-  feedFilter: 'all'
+  feedFilter: 'all',
+  following: new Set()
 };
 
 // ============================================
@@ -68,6 +69,7 @@ function saveAccounts() {
   localStorage.setItem('nostra_isla_relays', JSON.stringify(state.relays));
   if (state.currentAccount) {
     localStorage.setItem('nostra_isla_active', state.currentAccount.publicKey);
+    localStorage.setItem('nostra_isla_following_' + state.currentAccount.publicKey, JSON.stringify([...state.following]));
   }
 }
 
@@ -93,8 +95,20 @@ function loadAccounts() {
     } else if (state.accounts.length > 0) {
       state.currentAccount = state.accounts[0];
     }
+    loadFollowing();
   } catch (e) {
     console.error('Error loading accounts:', e);
+  }
+}
+
+function loadFollowing() {
+  if (!state.currentAccount) return;
+  try {
+    const saved = localStorage.getItem('nostra_isla_following_' + state.currentAccount.publicKey);
+    if (saved) state.following = new Set(JSON.parse(saved));
+    else state.following = new Set();
+  } catch (e) {
+    state.following = new Set();
   }
 }
 
@@ -306,11 +320,16 @@ function hasMedia(event) {
   return false;
 }
 
+  const renderedIds = new Set();
+
 function addEventToFeed(event) {
   const feed = $('feed-events');
   if (!feed) return;
+  if (renderedIds.has(event.id)) return;
+  renderedIds.add(event.id);
 
   if (state.feedFilter === 'media' && !hasMedia(event)) return;
+  if (state.feedFilter === 'following' && !state.following.has(event.pubkey) && event.pubkey !== state.currentAccount?.publicKey) return;
 
   const isReply = event.tags.some(t => t[0] === 'e');
   const profile = state.profileCache.get(event.pubkey);
@@ -332,7 +351,7 @@ function addEventToFeed(event) {
 
   let mediaHtml = '';
   for (const url of images) {
-    mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
+    mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy"></div>`;
   }
   for (const url of videos) {
     mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
@@ -426,6 +445,7 @@ function renderFeed() {
   const feed = $('feed-events');
   if (!feed) return;
   feed.innerHTML = '';
+  renderedIds.clear();
   const allEvents = Array.from(state.eventCache.events.values())
     .filter(e => e.kind === 1 || e.kind === 1063)
     .sort((a, b) => b.created_at - a.created_at);
@@ -827,7 +847,7 @@ function createAccount() {
       publicKey,
       npub,
       nsec,
-      name: 'Nueva cuenta',
+      name: 'NostraIsla User',
       created_at: Date.now()
     };
 
@@ -884,10 +904,19 @@ function importAccount(nsecInput) {
 function switchAccount(index) {
   if (index >= 0 && index < state.accounts.length) {
     state.currentAccount = state.accounts[index];
+    renderedIds.clear();
+    renderedDmIds.clear();
+    state.eventCache = new EventCache();
+    state.profileCache = new ProfileCache();
+    state.relayConnections.forEach(r => r.close());
+    state.relayConnections = [];
+    const feed = $('feed-events');
+    if (feed) feed.innerHTML = '';
     saveAccounts();
-    loadProfile();
+    loadFollowing();
+    showScreen('feed');
+    connectToRelays().then(() => loadProfile());
     showToast('Cuenta cambiada', 'success');
-    showScreen('profile');
   }
 }
 
@@ -900,6 +929,47 @@ function removeAccount(index) {
   }
   saveAccounts();
   renderAccounts();
+}
+
+// ============================================
+// Follow / Unfollow (NIP-02)
+// ============================================
+function toggleFollow(hexPubkey) {
+  if (!state.currentAccount) return;
+  if (state.following.has(hexPubkey)) {
+    state.following.delete(hexPubkey);
+    showToast('Dejaste de seguir');
+  } else {
+    state.following.add(hexPubkey);
+    showToast('Siguiendo');
+  }
+  saveAccounts();
+  updateFollowButton(hexPubkey);
+  publishContactList();
+}
+
+function updateFollowButton(hexPubkey) {
+  const btn = $('btn-follow-user');
+  if (!btn) return;
+  if (hexPubkey === state.currentAccount?.publicKey) {
+    btn.classList.add('hidden');
+    return;
+  }
+  btn.classList.remove('hidden');
+  if (state.following.has(hexPubkey)) {
+    btn.textContent = 'Siguiendo';
+    btn.className = 'btn btn-secondary';
+  } else {
+    btn.textContent = 'Seguir';
+    btn.className = 'btn btn-primary';
+  }
+}
+
+function publishContactList() {
+  if (!state.currentAccount) return;
+  const contacts = [...state.following].map(pubkey => ({ pubkey }));
+  const event = createContactList(state.currentAccount.privateKey, contacts);
+  publish(event);
 }
 
 function renderAccounts() {
@@ -1027,6 +1097,7 @@ function searchUserProfile(hexPubkey) {
   $('user-profile-nip05').classList.add('hidden');
   $('user-profile-npub').textContent = 'npub1' + hexPubkey.slice(0, 20) + '...';
   $('user-profile-feed').innerHTML = '';
+  updateFollowButton(hexPubkey);
 
   const subId = 'user-search-' + hexPubkey.slice(0, 8);
   const filters = [
@@ -1068,7 +1139,7 @@ function searchUserProfile(hexPubkey) {
 
           let mediaHtml = '';
           for (const url of images) {
-            mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy" onerror="this.style.display='none'"></div>`;
+            mediaHtml += `<div class="event-media"><img src="${url}" loading="lazy"></div>`;
           }
           for (const url of videos) {
             mediaHtml += `<div class="event-media"><video src="${url}" controls preload="metadata"></video></div>`;
@@ -1105,7 +1176,7 @@ function searchUserProfile(hexPubkey) {
         const isVideo = mime.startsWith('video/');
         let mediaHtml = '';
         if (isImage) {
-          mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy" onerror="this.style.display='none'"></div>`;
+    mediaHtml = `<div class="event-media"><img src="${media.url}" alt="${media.filename || 'imagen'}" loading="lazy"></div>`;
         } else if (isVideo) {
           mediaHtml = `<div class="event-media"><video src="${media.url}" controls preload="metadata"></video></div>`;
         } else {
@@ -1348,6 +1419,7 @@ function init() {
     state.feedFilter = 'all';
     $('btn-filter-all').classList.add('active');
     $('btn-filter-media').classList.remove('active');
+    $('btn-filter-following')?.classList.remove('active');
     renderFeed();
   });
 
@@ -1355,6 +1427,15 @@ function init() {
     state.feedFilter = 'media';
     $('btn-filter-media').classList.add('active');
     $('btn-filter-all').classList.remove('active');
+    $('btn-filter-following')?.classList.remove('active');
+    renderFeed();
+  });
+
+  $('btn-filter-following')?.addEventListener('click', () => {
+    state.feedFilter = 'following';
+    $('btn-filter-following').classList.add('active');
+    $('btn-filter-all').classList.remove('active');
+    $('btn-filter-media').classList.remove('active');
     renderFeed();
   });
 
@@ -1443,6 +1524,11 @@ function init() {
 
   // User profile back button
   $('btn-back-user-profile')?.addEventListener('click', () => showScreen('feed'));
+
+  // Follow/unfollow from user profile
+  $('btn-follow-user')?.addEventListener('click', () => {
+    if (state.viewingUserProfile) toggleFollow(state.viewingUserProfile);
+  });
 
   // Send DM from user profile
   $('btn-send-dm-to-user')?.addEventListener('click', async () => {

@@ -51,6 +51,7 @@
       <div class="feed-filters">
         <button id="btn-filter-all" class="filter-btn active">Todos</button>
         <button id="btn-filter-media" class="filter-btn">🖼 Media</button>
+        <button id="btn-filter-following" class="filter-btn">👤 Siguiendo</button>
       </div>
       <div id="feed-loading" class="loading hidden">
         <div class="spinner"></div>
@@ -223,9 +224,12 @@
       <p id="user-profile-about" class="profile-about"></p>
       <p id="user-profile-nip05" class="profile-nip05 hidden"></p>
       <p id="user-profile-npub" class="profile-npub"></p>
-      <button id="btn-send-dm-to-user" class="btn btn-primary">
-        Enviar mensaje
-      </button>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button id="btn-follow-user" class="btn btn-primary hidden">Seguir</button>
+        <button id="btn-send-dm-to-user" class="btn btn-primary">
+          Enviar mensaje
+        </button>
+      </div>
     </div>
 
     <div id="user-profile-feed" class="feed"></div>
